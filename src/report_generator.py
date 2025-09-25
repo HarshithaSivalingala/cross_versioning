@@ -53,7 +53,7 @@ class UpgradeReportGenerator:
 
         # Dependency updates
         if self.dependency_changes:
-            report += "## 📦 Dependency Updates\n\n"
+            report += "## Dependency Updates\n\n"
             for change in self.dependency_changes:
                 report += f"- {change}\n"
             report += "\n"
@@ -115,7 +115,7 @@ class UpgradeReportGenerator:
 
         # Manual review section
         if failed:
-            report += "\n## 🛠️ Manual Review Needed\n\n"
+            report += "\n## Manual Review Needed\n\n"
             report += "The following files failed automatic upgrade and require manual attention:\n\n"
             for i, result in enumerate(failed, 1):
                 short_path = os.path.basename(result.file_path)

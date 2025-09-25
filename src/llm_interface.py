@@ -1,33 +1,42 @@
-import os
-from typing import Optional
+import openai
+import re
+
+# export OPENAI_API_KEY="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"   
+
+def generate(prompt):
+    try:
+        client = openai.OpenAI(
+        api_key="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",
+        base_url="https://openrouter.ai/api/v1"
+            )
+        
+        response = client.chat.completions.create(
+                model="mistralai/mistral-7b-instruct",  # Or any other OpenRouter-supported model
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=2000
+            )
+        print(len(response.choices))
+        print(response.choices[0].message)
+        return response.choices[0].message.content
+    except Exception as e:
+        raise RuntimeError(f"OpenRouter API error: {str(e)}")
+
 
 def call_llm(prompt: str, model: str = "gemini-1.5-flash") -> str:
     """Call Google Gemini API"""
     try:
-        import google.generativeai as genai
+        response = generate(prompt)
         
-        # Configure API key
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise Exception("GOOGLE_API_KEY environment variable not set")
-        
-        genai.configure(api_key=api_key)
-        
-        # Use the model from environment or default
-        model_name = os.getenv("ML_UPGRADER_MODEL", model)
-        
-        # Create model instance
-        model = genai.GenerativeModel(model_name)
-        
-        # Generate response
-        response = model.generate_content(prompt)
-        
-        if not response.text:
-            raise Exception("Empty response from Gemini API")
+        if not response:
+            raise Exception("Empty response from OpenAI API")
             
-        return response.text
+        return response
         
     except ImportError:
-        raise Exception("google-generativeai package not installed. Run: pip install google-generativeai")
+        raise Exception("openai package not installed. Run: pip install openai")
     except Exception as e:
-        raise Exception(f"Gemini API call failed: {str(e)}")s
+        raise Exception(f" API call failed: {str(e)}")
+    
+

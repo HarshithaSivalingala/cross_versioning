@@ -18,37 +18,86 @@ def write_file(path: str, content: str) -> None:
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
-def build_prompt(code: str, error: Optional[str] = None) -> str:
-    """Build prompt for LLM with context about common migrations"""
-    base_prompt = """You are an expert ML code migration assistant.
-Rewrite this Python code to work with the latest versions of TensorFlow, PyTorch, NumPy, and JAX.
+from typing import Optional
 
-IMPORTANT MIGRATION PATTERNS:
-- TensorFlow 1.x → 2.x: Remove tf.Session, use eager execution, tf.compat.v1 if needed
-- PyTorch: Update deprecated functions, use newer tensor operations
-- NumPy: Replace deprecated functions (np.asscalar → .item(), etc.)
-- JAX: Update to current API patterns
-
-Preserve ALL functionality. Return ONLY the corrected code without explanations.
-"""
+def build_prompt_best(code: str, error: Optional[str] = None) -> str:
+    """
+    Build a robust, future-proof LLM prompt for ML code upgrade.
+    
+    Guarantees:
+    - Detects which frameworks/libraries are used (TF, PyTorch, NumPy, JAX, etc.)
+    - Upgrades only those frameworks to their latest stable versions
+    - Preserves all logic and functionality
+    - Removes deprecated APIs, outdated patterns, and placeholders in TensorFlow
+    - Returns fully working code ready to run
+    - Output ONLY inside a single fenced Python code block
+    """
+    
+    base_prompt = (
+        "You are an expert Python ML code migration assistant.\n"
+        "Upgrade the following Python code to be fully compatible with the latest stable version(s) "
+        "of ONLY the libraries it already uses.\n\n"
+        "⚠️ RULES:\n"
+        "- Do NOT convert frameworks (keep TensorFlow code as TensorFlow, PyTorch as PyTorch, etc.)\n"
+        "- Detect and replace all deprecated APIs, functions, and patterns with the current recommended approach\n"
+        "- Preserve all functionality and logic exactly; do not refactor unrelated parts\n"
+        "- Ensure the code runs correctly with the latest stable release of each used library\n"
+        "- Always return the ENTIRE upgraded code\n"
+        "- Output ONLY a single fenced Python code block:\n\n"
+        "```python\n"
+        "# upgraded code here\n"
+        "```"
+    )
     
     if error:
-        return f"""{base_prompt}
-
-The following upgraded code failed with error:
-{error}
-
-Please fix the issue and return the full corrected file.
-
-Code:
-{code}
-"""
+        return (
+            f"{base_prompt}\n\n"
+            "The previously upgraded code failed with this error:\n"
+            f"{error}\n\n"
+            "Please fix it and return the full corrected file.\n\n"
+            f"Code:\n{code}\n"
+        )
     else:
-        return f"""{base_prompt}
+        return (
+            f"{base_prompt}\n\n"
+            "Code to upgrade:\n"
+            f"{code}\n"
+        )
 
-Code to upgrade:
-{code}
-"""
+
+def build_prompt(code: str, error: Optional[str] = None) -> str:
+    """Build prompt for LLM to upgrade ML/NumPy code in-place without mixing frameworks"""
+    
+    base_prompt = (
+        "You are an expert Python ML code migration assistant.\n"
+        "Upgrade the following Python code to be fully compatible with the latest stable version(s) "
+        "of ONLY the libraries it already uses.\n\n"
+        "⚠️ RULES:\n"
+        "- Do NOT convert between frameworks (e.g., keep TensorFlow code in TensorFlow, PyTorch in PyTorch).\n"
+        "- Do NOT add new frameworks unless already imported in the code.\n"
+        "- Preserve all functionality and logic exactly.\n"
+        "- Apply only necessary migrations (remove deprecated APIs, update function signatures, fix types).\n"
+        "- Always return the ENTIRE corrected code.\n"
+        "- Output ONLY inside a single fenced code block:\n\n"
+        "```python\n"
+        "# upgraded code here\n"
+        "```"
+    )
+    
+    if error:
+        return (
+            f"{base_prompt}\n\n"
+            "The previously upgraded code failed with this error:\n"
+            f"{error}\n\n"
+            "Please fix the issue and return the full corrected file.\n\n"
+            f"Code:\n{code}\n"
+        )
+    else:
+        return (
+            f"{base_prompt}\n\n"
+            "Code to upgrade:\n"
+            f"{code}\n"
+        )
 
 def extract_api_changes(old_code: str, new_code: str) -> List[str]:
     """Extract API changes between old and new code"""

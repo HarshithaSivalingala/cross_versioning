@@ -1,3 +1,4 @@
+
 import llm_interface
 import validator
 import utils
@@ -25,15 +26,8 @@ def upgrade_file(input_path: str, output_path: str) -> report_generator.FileUpgr
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             prompt = utils.build_prompt(current_code, error)
-            new_code = llm_interface.call_llm(prompt)
-            
-            # Clean up LLM response (remove markdown code blocks if present)
-            if new_code.startswith('```python'):
-                new_code = new_code.split('```python\n', 1)[1]
-            if new_code.endswith('```'):
-                new_code = new_code.rsplit('\n```', 1)[0]
-            if new_code.startswith('```'):
-                new_code = new_code.split('```\n', 1)[1]
+            # new_code = llm_interface.call_llm(prompt)
+            new_code = clean_llm_response(llm_interface.call_llm(prompt))
             
             utils.write_file(output_path, new_code)
             
@@ -73,3 +67,14 @@ def upgrade_file(input_path: str, output_path: str) -> report_generator.FileUpgr
         api_changes=[],
         error=error or "Maximum retries exceeded"
     )
+
+
+import re
+
+def clean_llm_response(response: str) -> str:
+    """Extract the upgraded Python code from LLM response (strip markdown, explanations)"""
+    # Extract text inside the first ```python ... ```
+    match = re.search(r"```python\s*(.*?)```", response, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return response.strip()

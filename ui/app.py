@@ -21,12 +21,11 @@ def main():
     
     st.title("🔄 ML Repository Upgrader")
     st.markdown("""
-    **Automatically upgrade legacy ML repositories to use the latest APIs for:**
+    **Automatically upgrade repositories to use the latest APIs for:**
     - TensorFlow (1.x → 2.x)
     - PyTorch (legacy → modern)
     - NumPy (deprecated functions)
     - JAX (API updates)
-    - Dependencies (automatic version bumping)
     """)
     
     # Sidebar for settings
@@ -212,12 +211,7 @@ def main():
     st.markdown("---")
     st.markdown("""
     **How it works:**
-    1. Upload your legacy ML repository as a .zip file
-    2. The system analyzes each Python file and identifies deprecated APIs
-    3. Uses LLM to intelligently rewrite code with modern equivalents
-    4. Validates upgraded code and retries if needed
-    5. Updates dependencies to latest compatible versions
-    6. Generates detailed upgrade report with changes made
+    Upload your legacy ML repository as a .zip file
     """)
 
 if __name__ == "__main__":

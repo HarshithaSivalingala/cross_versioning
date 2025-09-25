@@ -20,7 +20,7 @@ def upgrade_repo(old_repo: str, new_repo: str) -> str:
         shutil.rmtree(new_repo)
     shutil.copytree(old_repo, new_repo)
     
-    print(f"🚀 Starting repo upgrade: {old_repo} → {new_repo}")
+    print(f"Starting repo upgrade: {old_repo} → {new_repo}")
     
     # Update dependencies
     print("📦 Updating dependencies...")

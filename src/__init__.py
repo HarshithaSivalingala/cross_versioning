@@ -7,4 +7,4 @@ to use the latest APIs for TensorFlow, PyTorch, NumPy, JAX, and other ML librari
 
 __version__ = "1.0.0"
 __author__ = "Harshitha"
-__email__ = "your.email@university.edu"
+__email__ = ".edu"
