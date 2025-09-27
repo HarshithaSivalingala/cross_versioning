@@ -78,7 +78,6 @@ def build_prompt(code: str, error: Optional[str] = None) -> str:
         "- Preserve all functionality and logic exactly.\n"
         "- Apply only necessary migrations (remove deprecated APIs, update function signatures, fix types).\n"
         "- Always return the ENTIRE corrected code.\n"
-        "- Output ONLY inside a single fenced code block:\n\n"
         "```python\n"
         "# upgraded code here\n"
         "```"

@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 @dataclass
@@ -10,8 +10,8 @@ class FileUpgradeResult:
     success: bool
     attempts: int
     api_changes: List[str]
-    error: str = None
-    diff: str = None
+    error: Optional[str] = None
+    diff: Optional[str] = None
 
 class UpgradeReportGenerator:
     """Generate detailed upgrade reports"""
