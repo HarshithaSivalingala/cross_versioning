@@ -6,7 +6,7 @@ import re
 def generate(prompt):
     try:
         client = openai.OpenAI(
-        api_key="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",
+        api_key="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",
         base_url="https://openrouter.ai/api/v1"
             )
         
