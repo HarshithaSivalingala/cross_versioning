@@ -1,0 +1,10 @@
+{
+    "command": ["python", "main.py"],
+    "timeout": 180,
+    "skip_install": false,
+    "force_reinstall": false,
+    "shell": false,
+    "cwd": "",
+    "env": {"PYTHONPATH": "src"},
+    "max_log_chars": 6000
+  }

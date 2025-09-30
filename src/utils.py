@@ -18,7 +18,42 @@ def write_file(path: str, content: str) -> None:
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
-from typing import Optional
+
+def is_probably_binary(path: str, sample_size: int = 2048) -> bool:
+    """Heuristic to detect binary files (null bytes or low text ratio)."""
+    try:
+        with open(path, "rb") as fh:
+            sample = fh.read(sample_size)
+    except OSError:
+        return False
+
+    if not sample:
+        return False
+
+    if b"\x00" in sample:
+        return True
+
+    text_chars = bytes({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x7F)))
+    text_set = set(text_chars)
+    text_count = sum(1 for byte in sample if byte in text_set)
+    ratio = text_count / len(sample)
+    return ratio < 0.85
+
+
+def should_skip_for_upgrade(path: str) -> Optional[str]:
+    """Return reason string if file should not be upgraded."""
+    parts = os.path.normpath(path).split(os.sep)
+    if any(part == "__MACOSX" for part in parts):
+        return "Skipped macOS resource fork metadata"
+
+    filename = os.path.basename(path)
+    if filename.startswith("._"):
+        return "Skipped macOS resource fork file"
+
+    if is_probably_binary(path):
+        return "Skipped binary/non-text file"
+
+    return None
 
 def build_prompt_best(code: str, error: Optional[str] = None) -> str:
     """

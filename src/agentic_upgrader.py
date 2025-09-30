@@ -18,17 +18,47 @@ def upgrade_file(input_path: str, output_path: str) -> report_generator.FileUpgr
             api_changes=[],
             error="Input file not found"
         )
+
+    skip_reason = utils.should_skip_for_upgrade(input_path)
+    if skip_reason:
+        print(f"ℹ️ Skipping {input_path}: {skip_reason}")
+        return report_generator.FileUpgradeResult(
+            file_path=input_path,
+            success=False,
+            attempts=0,
+            api_changes=[],
+            error=skip_reason
+        )
     
     old_code = utils.read_file(input_path)
     error = None
     current_code = old_code
 
+    try:
+        precheck_valid, precheck_error = validator.validate_code(input_path)
+        if not precheck_valid:
+            error = precheck_error
+    except Exception as exc:  # pragma: no cover - defensive, mirrors runtime loop handling
+        error = str(exc)
+
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             prompt = utils.build_prompt(current_code, error)
-            # new_code = llm_interface.call_llm(prompt)
-            new_code = clean_llm_response(llm_interface.call_llm(prompt))
-            
+            response = llm_interface.call_llm(prompt)
+            new_code = clean_llm_response(response)
+
+            stripped_code = new_code.strip()
+            if not stripped_code:
+                error = "LLM returned empty response"
+                print(f"⚠️ {input_path} attempt {attempt} error: {error}")
+                continue
+
+            apology_prefixes = ("i'm sorry", "im sorry", "sorry", "i cannot", "i can’t")
+            if stripped_code.lower().startswith(apology_prefixes) or stripped_code.startswith("# upgraded code here"):
+                error = "LLM returned placeholder text instead of upgraded code"
+                print(f"⚠️ {input_path} attempt {attempt} error: {error}")
+                continue
+
             utils.write_file(output_path, new_code)
             
             # Validate the new code
