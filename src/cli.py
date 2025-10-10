@@ -1,7 +1,10 @@
 import argparse
 import os
 import sys
+from dotenv import load_dotenv
 import repo_upgrader 
+
+load_dotenv()
 
 def main():
     """Command line interface for ML Repository Upgrader"""
@@ -12,7 +15,7 @@ def main():
 Examples:
   ml-upgrader old_repo/ new_repo/
   ml-upgrader --input old_repo.zip --output upgraded_repo.zip
-  ml-upgrader tensorflow_project/ modern_tf_project/ --model gpt-4
+  ml-upgrader tensorflow_project/ modern_tf_project/ --model openai/gpt-4
         """
     )
     
@@ -28,9 +31,9 @@ Examples:
     
     parser.add_argument(
         "--model",
-        default="gpt-4o-mini",
-        choices=["gpt-4o-mini", "gpt-4o", "gpt-4"],
-        help="LLM model to use (default: gpt-4o-mini)"
+        default="openai/gpt-4o-mini",
+        choices=["openai/gpt-4o-mini", "openai/gpt-4o", "openai/gpt-4"],
+        help="LLM model to use (default: openai/gpt-4o-mini)"
     )
     
     parser.add_argument(
@@ -49,9 +52,9 @@ Examples:
     args = parser.parse_args()
     
     # Check API key
-    if not os.getenv("OPENAI_API_KEY"):
-        print("❌ Error: OPENAI_API_KEY environment variable not set")
-        print("Set it with: export OPENAI_API_KEY='your-key'")
+    if not os.getenv("OPENROUTER_API_KEY"):
+        print("❌ Error: OPENROUTER_API_KEY environment variable not set")
+        print("Set it with: export OPENROUTER_API_KEY='your-key'")
         sys.exit(1)
     
     # Validate input path

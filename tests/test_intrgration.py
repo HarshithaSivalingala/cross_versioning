@@ -48,7 +48,7 @@ result = sess.run(y)
                 f.write("tensorflow==1.15.0\nnumpy==1.18.0\n")
             
             # Set mock environment
-            os.environ["OPENAI_API_KEY"] = "test-key"
+            os.environ["OPENROUTER_API_KEY"] = "test-key"
             
             # Run upgrade
             report_path = upgrade_repo(old_repo, new_repo)

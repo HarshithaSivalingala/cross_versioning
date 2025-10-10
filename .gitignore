@@ -6,3 +6,4 @@ env/
 *.pyo
 *.pyd
 */.DS_Store
+.env

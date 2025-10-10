@@ -1,49 +1,58 @@
-import re
+import os
 from typing import Optional
 import openai
+from dotenv import load_dotenv
 from together import Together
+
+load_dotenv()
+
+DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini"
+DEFAULT_TOGETHER_MODEL = "openai/gpt-oss-20b"
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def _require_env(key: str) -> str:
+    value = os.getenv(key)
+    if not value:
+        raise RuntimeError(f"{key} not set in environment")
+    return value
+
+
+def _extract_content(response) -> str:
+    message = response.choices[0].message  # type: ignore[attr-defined]
+    content = getattr(message, "content", None)
+    if not content:
+        raise RuntimeError("LLM response missing content")
+    return content  # type: ignore[return-value]
 
 
 def _generate_together(prompt: str, model: Optional[str] = None) -> str:
-    if Together is None:
-        raise ImportError("together package not installed. Run: pip install together")
+    api_key = _require_env("TOGETHER_API_KEY")
+    model_name = model or os.getenv("TOGETHER_MODEL", DEFAULT_TOGETHER_MODEL)
 
-    try:
-        client = Together()
-        response = client.chat.completions.create(
-            model=model or "openai/gpt-oss-20b",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        content = response.choices[0].message.content # type: ignore
-        print(content)
-        return content # type: ignore
-    except Exception as e:
-        raise RuntimeError(f"Together API error: {str(e)}") from e
+    client = Together(api_key=api_key)
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _extract_content(response)
 
 
 def _generate_openrouter(prompt: str, model: Optional[str] = None) -> str:
-    if openai is None:
-        raise ImportError("openai package not installed. Run: pip install openai")
+    api_key = _require_env("OPENROUTER_API_KEY")
+    model_name = model or os.getenv("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
+    base_url = os.getenv("OPENROUTER_BASE_URL", DEFAULT_OPENROUTER_BASE_URL)
 
-    try:
-        client = openai.OpenAI(
-        api_key="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",
-        base_url="https://openrouter.ai/api/v1"
-            )
-        
-        response = client.chat.completions.create(
-            model=model or "mistralai/mistral-7b-instruct",  # Any OpenRouter-supported model
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000,
-        )
-        print(len(response.choices))
-        print(response.choices[0].message)
-        return response.choices[0].message.content # type: ignore
-    except Exception as e:
-        raise RuntimeError(f"OpenRouter API error: {str(e)}") from e
+    client = openai.OpenAI(api_key=api_key, base_url=base_url)
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=2000,
+    )
+    return _extract_content(response)
 
 
-def generate(prompt: str, *, provider: str = "together", model: Optional[str] = None) -> str:
+def generate(prompt: str, *, provider: str = "openrouter", model: Optional[str] = None) -> str:
     if provider == "together":
         return _generate_together(prompt, model=model)
     if provider == "openrouter":
@@ -53,21 +62,13 @@ def generate(prompt: str, *, provider: str = "together", model: Optional[str] = 
 
 def call_llm(
     prompt: str,
-    model: str = "gemini-1.5-flash",
+    model: str = DEFAULT_OPENROUTER_MODEL,
     *,
-    provider: str = "together",
+    provider: str = "openrouter",
 ) -> str:
-    """Call the configured LLM provider (Together default, OpenRouter optional)."""
-    try:
-        provider_model = None if model == "gemini-1.5-flash" else model
-        response = generate(prompt, provider=provider, model=provider_model)
-
-        if not response:
-            raise Exception("Empty response from LLM provider")
-
-        return response
-
-    except ImportError as exc:
-        raise Exception(str(exc)) from exc
-    except Exception as e:
-        raise Exception(f" API call failed: {str(e)}")
+    """Call the configured LLM provider with sensible defaults."""
+    provider_model = None if model == DEFAULT_OPENROUTER_MODEL else model
+    response = generate(prompt, provider=provider, model=provider_model)
+    if not response:
+        raise RuntimeError("Empty response from LLM provider")
+    return response

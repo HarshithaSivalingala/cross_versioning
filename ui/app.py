@@ -3,14 +3,68 @@ import zipfile
 import os
 import shutil
 import tempfile
-from pathlib import Path
 import sys
+import json
+from dotenv import load_dotenv
 
 # Simple path fix
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 # Direct imports
 import repo_upgrader
+
+load_dotenv()
+
+
+def _parse_runtime_command(raw: str):
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+    if isinstance(parsed, str):
+        parsed = parsed.strip()
+        if not parsed:
+            raise ValueError("Runtime command string cannot be empty.")
+        return parsed
+
+    if isinstance(parsed, list):
+        command_parts = []
+        for item in parsed:
+            if isinstance(item, (str, int, float)):
+                command_parts.append(str(item))
+            else:
+                raise ValueError("Runtime command list items must be strings or numbers.")
+        if not command_parts:
+            raise ValueError("Runtime command list cannot be empty.")
+        return command_parts
+
+    raise ValueError("Runtime command must be a JSON string or list of strings.")
+
+
+def _parse_runtime_env(raw: str):
+    raw = (raw or "").strip()
+    if not raw:
+        return {}
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Runtime environment must be valid JSON: {exc}") from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError('Runtime environment must be a JSON object, e.g. {"PYTHONPATH": "src"}.')
+
+    normalized = {}
+    for key, value in parsed.items():
+        if not isinstance(key, str):
+            raise ValueError("Runtime environment keys must be strings.")
+        normalized[key] = "" if value is None else str(value)
+    return normalized
 
 def main():
     st.set_page_config(
@@ -29,28 +83,43 @@ def main():
     """)
     
     # Sidebar for settings
+    runtime_ui_state = {
+        "enabled": False,
+        "command": '["python", "main.py"]',
+        "timeout": 180,
+        "skip_install": False,
+        "force_reinstall": False,
+        "shell": False,
+        "cwd": "",
+        "env": '{"PYTHONPATH": "src"}',
+        "max_log_chars": 6000,
+    }
+
     with st.sidebar:
         st.header("⚙️ Settings")
         
-        # API Key input
-        api_key = st.text_input(
-            "OpenAI API Key", 
+        existing_api_key = os.getenv("OPENROUTER_API_KEY", "")
+        api_key_input = st.text_input(
+            "OpenRouter API Key (optional)",
             type="password",
-            help="Required for LLM-powered code upgrades"
+            help="Leave blank to use the key from your .env file.",
         )
-        
-        if api_key:
-            os.environ["OPENAI_API_KEY"] = api_key
-            st.success("✅ API key set")
+
+        if api_key_input:
+            os.environ["OPENROUTER_API_KEY"] = api_key_input
+            st.success("✅ API key set for this session")
+        elif existing_api_key:
+            st.info("Using OPENROUTER_API_KEY from environment.")
         else:
-            st.warning("⚠️ Please enter your OpenAI API key")
-        
-        # Model selection
+            st.warning("⚠️ Provide an OpenRouter key via .env or enter it here before running an upgrade.")
+
+        model_options = ["openai/gpt-4o-mini", "openai/gpt-4o", "openai/gpt-4"]
         model = st.selectbox(
-    "Model",
-    ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"],
-    help="Choose Gemini model (flash is faster/cheaper)"
-)
+            "Model",
+            model_options,
+            index=0,
+            help="Choose the OpenRouter model; defaults to openai/gpt-4o-mini.",
+        )
         
         # Advanced settings
         with st.expander("Advanced Settings"):
@@ -58,6 +127,58 @@ def main():
             os.environ["ML_UPGRADER_MAX_RETRIES"] = str(max_retries)
             
             show_progress = st.checkbox("Show detailed progress", True)
+
+            runtime_ui_state["enabled"] = st.checkbox(
+                "Enable runtime validation",
+                value=runtime_ui_state["enabled"],
+                help="Run a quick command (e.g. smoke tests) after each upgrade attempt."
+            )
+
+            if runtime_ui_state["enabled"]:
+                runtime_ui_state["command"] = st.text_area(
+                    "Runtime command (string or JSON list)",
+                    value=runtime_ui_state["command"],
+                    help='Examples: "python main.py" or ["python", "main.py"]'
+                )
+                runtime_ui_state["timeout"] = st.number_input(
+                    "Runtime timeout (seconds)",
+                    min_value=1,
+                    max_value=3600,
+                    value=int(runtime_ui_state["timeout"]),
+                    step=10
+                )
+                runtime_ui_state["skip_install"] = st.checkbox(
+                    "Skip dependency installation",
+                    value=runtime_ui_state["skip_install"]
+                )
+                runtime_ui_state["force_reinstall"] = st.checkbox(
+                    "Force reinstall dependencies",
+                    value=runtime_ui_state["force_reinstall"]
+                )
+                runtime_ui_state["shell"] = st.checkbox(
+                    "Use shell execution",
+                    value=runtime_ui_state["shell"],
+                    help="Enable when the command must run through the shell."
+                )
+                runtime_ui_state["cwd"] = st.text_input(
+                    "Working directory (optional)",
+                    value=runtime_ui_state["cwd"],
+                    help="Relative path from the repository root."
+                )
+                runtime_ui_state["env"] = st.text_area(
+                    "Environment variables (JSON)",
+                    value=runtime_ui_state["env"],
+                    help='Example: {"PYTHONPATH": "src"}'
+                )
+                runtime_ui_state["max_log_chars"] = st.number_input(
+                    "Max runtime log characters",
+                    min_value=0,
+                    max_value=20000,
+                    value=int(runtime_ui_state["max_log_chars"]),
+                    step=500
+                )
+            else:
+                st.caption("Runtime validation disabled. Enable above to mirror ml_upgrader_runtime.json settings.")
     
     # Main interface
     col1, col2 = st.columns([1, 1])
@@ -71,11 +192,11 @@ def main():
             help="Upload a .zip file containing your ML repository"
         )
         
-        if uploaded_file and not api_key:
-            st.error("❌ Please enter your OpenAI API key in the sidebar first!")
+        if uploaded_file and not os.getenv("OPENROUTER_API_KEY"):
+            st.error("❌ Please set an OpenRouter API key in the sidebar or .env before running an upgrade.")
             return
-        
-        if uploaded_file and api_key:
+
+        if uploaded_file and os.getenv("OPENROUTER_API_KEY"):
             # Create temp directories
             temp_dir = tempfile.mkdtemp()
             old_repo_path = os.path.join(temp_dir, "old_repo")
@@ -110,6 +231,38 @@ def main():
                 
                 # Upgrade button
                 if st.button("🚀 Start Upgrade", type="primary", use_container_width=True):
+
+                    runtime_config_payload = None
+                    if runtime_ui_state["enabled"]:
+                        try:
+                            runtime_command = _parse_runtime_command(runtime_ui_state["command"])
+                        except ValueError as exc:
+                            st.error(f"Runtime command error: {exc}")
+                            return
+
+                        if runtime_command is None:
+                            st.error("Runtime command is required when runtime validation is enabled.")
+                            return
+
+                        try:
+                            runtime_env = _parse_runtime_env(runtime_ui_state["env"])
+                        except ValueError as exc:
+                            st.error(f"Runtime environment error: {exc}")
+                            return
+
+                        runtime_config_payload = {
+                            "command": runtime_command,
+                            "timeout": int(runtime_ui_state["timeout"]),
+                            "skip_install": bool(runtime_ui_state["skip_install"]),
+                            "force_reinstall": bool(runtime_ui_state["force_reinstall"]),
+                            "shell": bool(runtime_ui_state["shell"]),
+                            "max_log_chars": int(runtime_ui_state["max_log_chars"]),
+                            "env": runtime_env,
+                        }
+
+                        runtime_cwd = (runtime_ui_state["cwd"] or "").strip()
+                        if runtime_cwd:
+                            runtime_config_payload["cwd"] = runtime_cwd
                     
                     with st.spinner("🔄 Upgrading repository... This may take a few minutes."):
                         
@@ -124,8 +277,27 @@ def main():
                         try:
                             # Set model
                             os.environ["ML_UPGRADER_MODEL"] = model
-                            
-                            report_path = repo_upgrader.upgrade_repo(old_repo_path, new_repo_path)
+
+                            runtime_config_path = None
+                            previous_runtime_config_env = os.getenv("ML_UPGRADER_RUNTIME_CONFIG")
+                            try:
+                                if runtime_config_payload is not None:
+                                    runtime_temp = tempfile.NamedTemporaryFile("w", delete=False, suffix=".json")
+                                    json.dump(runtime_config_payload, runtime_temp, indent=2)
+                                    runtime_temp.flush()
+                                    runtime_temp.close()
+                                    runtime_config_path = runtime_temp.name
+                                    os.environ["ML_UPGRADER_RUNTIME_CONFIG"] = runtime_config_path
+
+                                report_path = repo_upgrader.upgrade_repo(old_repo_path, new_repo_path)
+                            finally:
+                                if runtime_config_path and os.path.exists(runtime_config_path):
+                                    os.unlink(runtime_config_path)
+                                if previous_runtime_config_env is not None:
+                                    os.environ["ML_UPGRADER_RUNTIME_CONFIG"] = previous_runtime_config_env
+                                elif runtime_config_payload is not None:
+                                    os.environ.pop("ML_UPGRADER_RUNTIME_CONFIG", None)
+
                             progress_bar.progress(90)
                             
                             status_text.text("📄 Generating report...")
