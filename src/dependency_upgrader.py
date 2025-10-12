@@ -29,9 +29,6 @@ class SmartDependencyUpdater:
         self.updated_deps = []
         self.detected_imports = set()
 
-    # -----------------------------------------------------------
-    # 1️⃣ Detect Imports
-    # -----------------------------------------------------------
     def scan_project_imports(self, repo_path: str) -> Set[str]:
         """Scan all Python files to detect actual imports used"""
         all_imports = set()
@@ -60,9 +57,6 @@ class SmartDependencyUpdater:
             pass
         return imports
 
-    # -----------------------------------------------------------
-    # 2️⃣ Update requirements.txt
-    # -----------------------------------------------------------
     def update_requirements_txt(self, repo_path: str) -> bool:
         """Update or create requirements.txt with detected dependencies"""
         req_path = os.path.join(repo_path, 'requirements.txt')
@@ -109,9 +103,7 @@ class SmartDependencyUpdater:
         print(f"✅ requirements.txt updated with {len(self.updated_deps)} changes")
         return True
 
-    # -----------------------------------------------------------
-    # 3️⃣ Update setup.py
-    # -----------------------------------------------------------
+
     def update_setup_py(self, repo_path: str) -> bool:
         """Update setup.py with latest ML dependency versions"""
         setup_path = os.path.join(repo_path, 'setup.py')
