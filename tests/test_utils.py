@@ -35,7 +35,7 @@ class TestUtils:
         error = "ModuleNotFoundError: No module named 'tensorflow'"
         prompt = build_prompt(code, error)
         
-        assert "failed with error" in prompt
+        assert "failed with this error" in prompt
         assert error in prompt
         assert code in prompt
     

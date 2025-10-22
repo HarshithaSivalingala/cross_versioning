@@ -1,7 +1,11 @@
 import os
 import re
+import shutil
 import difflib
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
+
+_UNNECESSARY_DIRECTORIES = {"__MACOSX", "__pycache__"}
+_UNNECESSARY_FILES = {".DS_Store", "Thumbs.db"}
 
 def read_file(path: str) -> str:
     """Read file content with encoding handling"""
@@ -14,9 +18,30 @@ def read_file(path: str) -> str:
 
 def write_file(path: str, content: str) -> None:
     """Write content to file with directory creation"""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+def prune_directory(root: str) -> None:
+    """Remove artifacts such as __MACOSX folders and resource forks."""
+    for current_root, dirnames, filenames in os.walk(root):
+        for dirname in list(dirnames):
+            if dirname in _UNNECESSARY_DIRECTORIES or dirname.startswith("._"):
+                shutil.rmtree(os.path.join(current_root, dirname), ignore_errors=True)
+                dirnames.remove(dirname)
+        for filename in list(filenames):
+            if (
+                filename in _UNNECESSARY_FILES
+                or filename.startswith("._")
+                or filename.endswith(".pyc")
+            ):
+                try:
+                    os.remove(os.path.join(current_root, filename))
+                except OSError:
+                    continue
 
 
 def is_probably_binary(path: str, sample_size: int = 2048) -> bool:
@@ -54,51 +79,6 @@ def should_skip_for_upgrade(path: str) -> Optional[str]:
         return "Skipped binary/non-text file"
 
     return None
-
-def build_prompt_best(code: str, error: Optional[str] = None) -> str:
-    """
-    Build a robust, future-proof LLM prompt for ML code upgrade.
-    
-    Guarantees:
-    - Detects which frameworks/libraries are used (TF, PyTorch, NumPy, JAX, etc.)
-    - Upgrades only those frameworks to their latest stable versions
-    - Preserves all logic and functionality
-    - Removes deprecated APIs, outdated patterns, and placeholders in TensorFlow
-    - Returns fully working code ready to run
-    - Output ONLY inside a single fenced Python code block
-    """
-    
-    base_prompt = (
-        "You are an expert Python ML code migration assistant.\n"
-        "Upgrade the following Python code to be fully compatible with the latest stable version(s) "
-        "of ONLY the libraries it already uses.\n\n"
-        "⚠️ RULES:\n"
-        "- Do NOT convert frameworks (keep TensorFlow code as TensorFlow, PyTorch as PyTorch, etc.)\n"
-        "- Detect and replace all deprecated APIs, functions, and patterns with the current recommended approach\n"
-        "- Preserve all functionality and logic exactly; do not refactor unrelated parts\n"
-        "- Ensure the code runs correctly with the latest stable release of each used library\n"
-        "- Always return the ENTIRE upgraded code\n"
-        "- Output ONLY a single fenced Python code block:\n\n"
-        "```python\n"
-        "# upgraded code here\n"
-        "```"
-    )
-    
-    if error:
-        return (
-            f"{base_prompt}\n\n"
-            "The previously upgraded code failed with this error:\n"
-            f"{error}\n\n"
-            "Please fix it and return the full corrected file.\n\n"
-            f"Code:\n{code}\n"
-        )
-    else:
-        return (
-            f"{base_prompt}\n\n"
-            "Code to upgrade:\n"
-            f"{code}\n"
-        )
-
 
 def build_prompt(code: str, error: Optional[str] = None) -> str:
     """Build prompt for LLM to upgrade ML/NumPy code in-place without mixing frameworks"""

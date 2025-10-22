@@ -17,7 +17,7 @@ loss = tf.reduce_mean(tf.square(output - y))
 optimizer = tf.train.AdamOptimizer(0.01).minimize(loss)
 
 # Initialize variables
-sess.run(tf.global_variables_initializer())
+sess.run(tf.global_variables_initiaslizer())
 
 # Sample data
 X_data = np.random.random((100, 2))

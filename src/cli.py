@@ -1,8 +1,20 @@
 import argparse
 import os
 import sys
+from pathlib import Path
+
 from dotenv import load_dotenv
-import repo_upgrader 
+
+if __package__ is None or __package__ == "":
+    _CURRENT_DIR = Path(__file__).resolve().parent
+    _ROOT_DIR = _CURRENT_DIR.parent
+    _ROOT_STR = str(_ROOT_DIR)
+    if _ROOT_STR not in sys.path:
+        sys.path.insert(0, _ROOT_STR)
+    import src.repo_upgrader as repo_upgrader  # type: ignore
+    import src.utils as utils  # type: ignore
+else:
+    from . import repo_upgrader, utils
 
 load_dotenv()
 
@@ -73,6 +85,8 @@ Examples:
         
         with zipfile.ZipFile(args.input_path, 'r') as zip_ref:
             zip_ref.extractall(extract_path)
+
+        utils.prune_directory(extract_path)
         
         args.input_path = extract_path
     

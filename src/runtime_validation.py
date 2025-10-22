@@ -12,20 +12,28 @@ RUNTIME_CONFIG_FILENAMES = (
     os.path.join(".ml-upgrader", "runtime.json"),
 )
 
+_RUNTIME_SEARCH_SKIP_DIRS = {
+    "__pycache__",
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "venv",
+    ".tox",
+    ".mypy_cache",
+}
 
-def perform_runtime_validation(
-    file_path: str
-) -> Tuple[bool, Optional[str]]:
-    try:
-        with open(file_path, "r", encoding="utf-8") as fh:
-            code = fh.read()
-    except UnicodeDecodeError:
-        with open(file_path, "r", encoding="latin-1") as fh:
-            code = fh.read()
-    except OSError as exc:
-        return False, f"Failed to read file {file_path}: {exc}"
 
+def perform_runtime_validation(file_path: str) -> Tuple[bool, Optional[str]]:
     project_root = _detect_project_root(file_path)
+    return perform_project_runtime_validation(project_root)
+
+
+def perform_project_runtime_validation(project_root: str) -> Tuple[bool, Optional[str]]:
+    project_root = os.path.abspath(project_root)
+    if not os.path.isdir(project_root):
+        return False, f"Project root '{project_root}' not found"
+
     runtime_settings, runtime_error = _resolve_runtime_settings(project_root)
     if runtime_error:
         return False, runtime_error
@@ -349,6 +357,146 @@ def _prepare_command(
     raise ValueError("Runtime command must be a string or a list of strings")
 
 
+def _discover_script_path(script: str, runtime_directory: str, project_root: str) -> Optional[str]:
+    if not script or os.path.isabs(script):
+        return None
+
+    runtime_candidate = os.path.join(runtime_directory, script)
+    if os.path.isfile(runtime_candidate):
+        return script
+
+    project_candidate = os.path.join(project_root, script)
+    if os.path.isfile(project_candidate):
+        return os.path.relpath(project_candidate, runtime_directory)
+
+    filename = os.path.basename(script)
+    matches: List[str] = []
+    for root, dirnames, files in os.walk(project_root):
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if name not in _RUNTIME_SEARCH_SKIP_DIRS and not name.startswith(".")
+        ]
+        if filename in files:
+            matches.append(os.path.join(root, filename))
+            if len(matches) > 1:
+                return None
+
+    if len(matches) == 1:
+        return os.path.relpath(matches[0], runtime_directory)
+
+    return None
+
+
+def _auto_adjust_python_script_command(
+    command: Union[str, List[str]],
+    runtime_directory: str,
+    project_root: str,
+) -> Tuple[Union[str, List[str]], Optional[str]]:
+    if not isinstance(command, list) or not command:
+        return command, None
+
+    executable = os.path.basename(command[0])
+    python_names = {
+        "python",
+        "python3",
+        os.path.basename(sys.executable),
+    }
+    if executable not in python_names:
+        return command, None
+
+    script_index: Optional[int] = None
+    for idx in range(1, len(command)):
+        part = command[idx]
+        if part == "-m":
+            # Module execution; no script path to adjust
+            return command, None
+        if part.startswith("-"):
+            continue
+        if part.endswith(".py"):
+            script_index = idx
+        break
+
+    if script_index is None:
+        return command, None
+
+    script_arg = command[script_index]
+    candidate = _discover_script_path(script_arg, runtime_directory, project_root)
+    if candidate is None or candidate == script_arg:
+        return command, None
+
+    adjusted = command.copy()
+    adjusted[script_index] = candidate
+    note = (
+        f"Runtime command script '{script_arg}' not found in '{runtime_directory}'. "
+        f"Using '{candidate}' instead."
+    )
+    return adjusted, note
+
+
+def _extract_missing_distribution(message: str) -> Optional[str]:
+    if not message:
+        return None
+    match = re.search(r"No matching distribution found for ([A-Za-z0-9_.-]+)", message)
+    if not match:
+        return None
+    spec = match.group(1)
+    parts = re.split(r"[<>=!~]", spec, maxsplit=1)
+    package = parts[0].strip()
+    return package or None
+
+
+def _extract_missing_module(log: str) -> Optional[str]:
+    if not log:
+        return None
+    match = re.search(r"No module named ['\"]([A-Za-z0-9_.-]+)['\"]", log)
+    if not match:
+        return None
+    module = match.group(1)
+    if not module or module.startswith("_"):
+        return None
+    return module.split(".")[0]
+
+
+def _discover_requirement_files(
+    project_root: str,
+    runtime_directory: str,
+    command: Union[str, List[str]],
+) -> List[str]:
+    candidates: List[str] = []
+
+    def _add(path: str) -> None:
+        absolute = os.path.abspath(path)
+        if os.path.isfile(absolute) and absolute not in candidates:
+            candidates.append(absolute)
+
+    _add(os.path.join(project_root, "requirements.txt"))
+
+    if runtime_directory and runtime_directory != project_root:
+        _add(os.path.join(runtime_directory, "requirements.txt"))
+
+    if isinstance(command, list) and len(command) >= 2:
+        script_path: Optional[str] = None
+        for part in command[1:]:
+            if part == "-m":
+                script_path = None
+                break
+            if part.startswith("-"):
+                continue
+            if part.endswith(".py"):
+                script_path = part
+                break
+        if script_path:
+            candidate_path = script_path
+            if not os.path.isabs(candidate_path):
+                candidate_path = os.path.join(runtime_directory, candidate_path)
+            script_dir = os.path.dirname(os.path.abspath(candidate_path))
+            if script_dir:
+                _add(os.path.join(script_dir, "requirements.txt"))
+
+    return candidates
+
+
 def _run_runtime_validation(
     project_root: str,
     command: Union[str, List[str]],
@@ -367,7 +515,21 @@ def _run_runtime_validation(
         return False, f"Runtime validation error{label_suffix}: project root '{project_root}' not found"
 
     prepared_command, use_shell = _prepare_command(command, shell_preference)
+    runtime_directory = runtime_cwd or project_root
     command_repr = _stringify_command(prepared_command, use_shell)
+
+    if not os.path.isdir(runtime_directory):
+        logs: List[Dict[str, Any]] = []
+        logs.append({
+            "step": "runtime_command",
+            "command": "skip",
+            "returncode": 1,
+            "stdout": "",
+            "stderr": f"Runtime directory '{runtime_directory}' not found",
+            "timed_out": False,
+        })
+        reason = f"Runtime directory '{runtime_directory}' not found"
+        return False, _format_runtime_error(command_repr, logs, reason, log_limit)
 
     venv_path = _select_venv_path(project_root)
     venv_bin, venv_python, _ = _resolve_venv_paths(venv_path)
@@ -384,6 +546,18 @@ def _run_runtime_validation(
             reason = "Failed to create virtual environment"
             return False, _format_runtime_error(command_repr, logs, reason, log_limit)
 
+    adjusted_command, adjustment_note = _auto_adjust_python_script_command(
+        prepared_command,
+        runtime_directory=runtime_directory,
+        project_root=project_root,
+    )
+    if adjustment_note:
+        print(f"ℹ️ {adjustment_note}")
+    prepared_command = adjusted_command
+    command_repr = _stringify_command(prepared_command, use_shell)
+
+    requirement_files = _discover_requirement_files(project_root, runtime_directory, prepared_command)
+
     install_ok = True
     if not skip_install:
         install_ok = _ensure_dependencies_installed(
@@ -391,6 +565,7 @@ def _run_runtime_validation(
             venv_path,
             venv_python,
             logs,
+            requirement_files=requirement_files,
             force_reinstall=force_reinstall,
         )
     else:
@@ -408,20 +583,6 @@ def _run_runtime_validation(
     env["VIRTUAL_ENV"] = venv_path
     env["PATH"] = _prepend_to_path(venv_bin, base_env.get("PATH", ""))
 
-    runtime_directory = runtime_cwd or project_root
-
-    if not os.path.isdir(runtime_directory):
-        logs.append({
-            "step": "runtime_command",
-            "command": "skip",
-            "returncode": 1,
-            "stdout": "",
-            "stderr": f"Runtime directory '{runtime_directory}' not found",
-            "timed_out": False,
-        })
-        reason = f"Runtime directory '{runtime_directory}' not found"
-        return False, _format_runtime_error(command_repr, logs, reason, log_limit)
-
     runtime_result = _run_subprocess(
         prepared_command,
         cwd=runtime_directory,
@@ -433,6 +594,30 @@ def _run_runtime_validation(
 
     if install_ok and runtime_result["returncode"] == 0 and not runtime_result["timed_out"]:
         return True, None
+
+    if (
+        install_ok
+        and not skip_install
+        and not runtime_result["timed_out"]
+        and runtime_result["returncode"]
+    ):
+        missing_module = _extract_missing_module(runtime_result.get("stderr", "") or runtime_result.get("stdout", ""))
+        if missing_module:
+            auto_install_cmd = [venv_python, "-m", "pip", "install", missing_module]
+            auto_install_result = _run_subprocess(auto_install_cmd, cwd=project_root)
+            logs.append(_step_log(f"auto_install:{missing_module}", auto_install_result))
+            if auto_install_result["returncode"] == 0 and not auto_install_result["timed_out"]:
+                retry_result = _run_subprocess(
+                    prepared_command,
+                    cwd=runtime_directory,
+                    env=env,
+                    timeout=timeout,
+                    shell=use_shell,
+                )
+                logs.append(_step_log("runtime_command_retry", retry_result))
+                if retry_result["returncode"] == 0 and not retry_result["timed_out"]:
+                    return True, None
+                runtime_result = retry_result
 
     label_suffix = f" ({command_label})" if command_label else ""
     if runtime_result["timed_out"]:
@@ -453,15 +638,33 @@ def _ensure_dependencies_installed(
     venv_python: str,
     logs: List[Dict[str, Any]],
     *,
+    requirement_files: Optional[List[str]] = None,
     force_reinstall: bool,
 ) -> bool:
     marker_path = os.path.join(venv_path, "ml_upgrader_marker.json")
     current_marker = _load_marker(marker_path) or {}
-    requirements_path = os.path.join(project_root, "requirements.txt")
-    requirements_digest = _hash_file(requirements_path)
-    marker_requirements = current_marker.get("requirements_hash")
 
-    install_needed = force_reinstall or requirements_digest != marker_requirements
+    requirement_files = requirement_files or []
+    default_requirements = os.path.join(project_root, "requirements.txt")
+    if os.path.isfile(default_requirements):
+        requirement_files.insert(0, default_requirements)
+
+    seen: set[str] = set()
+    normalized_files: List[str] = []
+    for path in requirement_files:
+        absolute = os.path.abspath(path)
+        if absolute in seen:
+            continue
+        seen.add(absolute)
+        if os.path.isfile(absolute):
+            normalized_files.append(absolute)
+
+    requirement_hashes: Dict[str, Optional[str]] = {
+        path: _hash_file(path) for path in normalized_files
+    }
+    marker_hashes = current_marker.get("requirements_hashes", {})
+
+    install_needed = force_reinstall or requirement_hashes != marker_hashes
 
     setup_present = os.path.isfile(os.path.join(project_root, "setup.py"))
     pyproject_present = os.path.isfile(os.path.join(project_root, "pyproject.toml"))
@@ -480,71 +683,60 @@ def _ensure_dependencies_installed(
         })
         return True
 
-    install_success = True
-    pip_commands: List[List[str]] = []
+    toolchain_cmd = [venv_python, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"]
+    toolchain_result = _run_subprocess(toolchain_cmd, cwd=project_root)
+    logs.append(_step_log("upgrade_toolchain", toolchain_result))
+    if toolchain_result["timed_out"] or toolchain_result["returncode"] != 0:
+        return False
 
-    if install_needed:
-        pip_commands.append([venv_python, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"])
-
-        requirement_packages = _extract_requirement_packages(requirements_path)
-        if requirement_packages:
-            pip_commands.append([venv_python, "-m", "pip", "install", "--upgrade", *requirement_packages])
-        else:
-            logs.append({
-                "step": "dependency_install",
-                "command": "skip",
-                "returncode": 0,
-                "stdout": "requirements.txt found but no packages to install",
-                "stderr": "",
-                "timed_out": False,
-            })
-    elif install_needed and requirements_digest is None:
+    success = True
+    if install_needed and normalized_files:
+        for req_path in normalized_files:
+            install_result = _run_subprocess(
+                [venv_python, "-m", "pip", "install", "-r", req_path],
+                cwd=os.path.dirname(req_path) or project_root,
+            )
+            step_name = f"dependency_install:{os.path.relpath(req_path, project_root)}"
+            logs.append(_step_log(step_name, install_result))
+            if install_result["timed_out"]:
+                success = False
+                break
+            if install_result["returncode"] != 0:
+                fallback_package = _extract_missing_distribution(install_result.get("stderr", ""))
+                if fallback_package:
+                    fallback_cmd = [venv_python, "-m", "pip", "install", fallback_package]
+                    fallback_result = _run_subprocess(fallback_cmd, cwd=project_root)
+                    logs.append(_step_log(f"dependency_fallback:{fallback_package}", fallback_result))
+                    if fallback_result["timed_out"] or fallback_result["returncode"] != 0:
+                        success = False
+                        break
+                    continue
+                success = False
+                break
+    elif install_needed and not normalized_files:
         logs.append({
             "step": "dependency_install",
             "command": "skip",
             "returncode": 0,
-            "stdout": "requirements.txt not found; skipping requirement install",
+            "stdout": "No requirements files discovered",
             "stderr": "",
             "timed_out": False,
         })
 
-    if run_editable:
-        pip_commands.append([venv_python, "-m", "pip", "install", "-e", project_root])
+    if run_editable and success:
+        editable_result = _run_subprocess([venv_python, "-m", "pip", "install", "-e", project_root], cwd=project_root)
+        logs.append(_step_log("editable_install", editable_result))
+        if editable_result["timed_out"] or editable_result["returncode"] != 0:
+            success = False
 
-    if not pip_commands:
-        logs.append({
-            "step": "dependency_install",
-            "command": "skip",
-            "returncode": 0,
-            "stdout": "No dependency installation required",
-            "stderr": "",
-            "timed_out": False,
-        })
-        _save_marker(
-            marker_path,
-            {
-                "requirements_hash": requirements_digest,
-                "editable_installed": editable_installed or editable_sources_present,
-            },
-        )
-        return install_success
+    if success:
+        marker_data = {
+            "requirements_hashes": requirement_hashes,
+            "editable_installed": run_editable or editable_installed,
+        }
+        _save_marker(marker_path, marker_data)
 
-    for cmd in pip_commands:
-        result = _run_subprocess(cmd, cwd=project_root)
-        logs.append(_step_log("dependency_install", result))
-        if result["timed_out"] or result["returncode"] != 0:
-            install_success = False
-
-    if install_success:
-        _save_marker(
-            marker_path,
-            {
-                "requirements_hash": requirements_digest,
-                "editable_installed": editable_sources_present or editable_installed,
-            },
-        )
-
-    return install_success
+    return success
 
 
 def _build_base_env(project_root: str, extra_env: Optional[Dict[str, str]]) -> Dict[str, str]:
@@ -716,6 +908,3 @@ def _save_marker(path: str, data: Dict[str, Any]) -> None:
             json.dump(data, fh)
     except OSError:
         pass
-
-
-perform_runtime_validation("/Users/sandeephirani/Pictures/Inputs/input/main.py")

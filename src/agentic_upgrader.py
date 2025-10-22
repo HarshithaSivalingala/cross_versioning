@@ -1,11 +1,23 @@
-
-import llm_interface
-import validator
-import utils
-import report_generator
 import os
+import re
+import sys
+from pathlib import Path
 
-def upgrade_file(input_path: str, output_path: str) -> report_generator.FileUpgradeResult:
+if __package__ is None or __package__ == "":
+    _CURRENT_DIR = Path(__file__).resolve().parent
+    _ROOT_DIR = _CURRENT_DIR.parent
+    _ROOT_STR = str(_ROOT_DIR)
+    if _ROOT_STR not in sys.path:
+        sys.path.insert(0, _ROOT_STR)
+    import src.llm_interface as llm_interface  # type: ignore
+    import src.report_generator as report_generator  # type: ignore
+    import src.utils as utils  # type: ignore
+    import src.validator as validator  # type: ignore
+else:
+    from . import llm_interface, report_generator, utils, validator
+
+
+def upgrade_file(input_path: str, output_path: str):
     """Upgrade a single file with detailed tracking"""
     
     MAX_RETRIES = int(os.getenv("ML_UPGRADER_MAX_RETRIES", "5"))
@@ -35,7 +47,7 @@ def upgrade_file(input_path: str, output_path: str) -> report_generator.FileUpgr
     current_code = old_code
 
     try:
-        precheck_valid, precheck_error = validator.validate_code(input_path)
+        precheck_valid, precheck_error = validator.validate_code(input_path, run_runtime=False)
         if not precheck_valid:
             error = precheck_error
     except Exception as exc:  # pragma: no cover - defensive, mirrors runtime loop handling
@@ -62,7 +74,7 @@ def upgrade_file(input_path: str, output_path: str) -> report_generator.FileUpgr
             utils.write_file(output_path, new_code)
             
             # Validate the new code
-            is_valid, error = validator.validate_code(output_path)
+            is_valid, error = validator.validate_code(output_path, run_runtime=False)
             
             if is_valid:
                 # Success! Generate final result
@@ -99,7 +111,6 @@ def upgrade_file(input_path: str, output_path: str) -> report_generator.FileUpgr
     )
 
 
-import re
 
 def clean_llm_response(response: str) -> str:
     """Extract the upgraded Python code from LLM response (strip markdown, explanations)"""

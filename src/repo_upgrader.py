@@ -1,16 +1,28 @@
 import os
 import shutil
-import agentic_upgrader
-import dependency_upgrader
-import report_generator
+import sys
+from pathlib import Path
 from typing import List
+
+if __package__ is None or __package__ == "":
+    _CURRENT_DIR = Path(__file__).resolve().parent
+    _ROOT_DIR = _CURRENT_DIR.parent
+    _ROOT_STR = str(_ROOT_DIR)
+    if _ROOT_STR not in sys.path:
+        sys.path.insert(0, _ROOT_STR)
+    import src.agentic_upgrader as agentic_upgrader  # type: ignore
+    import src.dependency_upgrader as dependency_upgrader  # type: ignore
+    import src.report_generator as report_generator  # type: ignore
+    import src.validator as validator  # type: ignore
+else:
+    from . import agentic_upgrader, dependency_upgrader, report_generator, validator
 
 def upgrade_repo(old_repo: str, new_repo: str) -> str:
     """
     Upgrade entire repository with comprehensive reporting
     Returns path to generated report
     """
-    
+
     previous_project_root = os.getenv("ML_UPGRADER_PROJECT_ROOT")
     os.environ["ML_UPGRADER_PROJECT_ROOT"] = new_repo
 
@@ -33,7 +45,7 @@ def upgrade_repo(old_repo: str, new_repo: str) -> str:
         report_generator_instance.add_dependency_changes(dependency_updater_instance.updated_deps)
         
         # Upgrade Python files
-        python_files = []
+        python_files: List[str] = []
         for root, _, files in os.walk(new_repo):
             for f in files:
                 if f.endswith(".py"):
@@ -77,6 +89,16 @@ def upgrade_repo(old_repo: str, new_repo: str) -> str:
         
         successful = len([r for r in report_generator_instance.results if r.success])
         total = len(report_generator_instance.results)
+
+        if total > 0 and successful == total:
+            print("🧪 Running runtime validation across upgraded project...")
+            runtime_ok, runtime_error = validator.validate_repository(new_repo)
+            if runtime_ok:
+                print("✅ Runtime validation passed")
+            else:
+                raise RuntimeError(f"Runtime validation failed: {runtime_error}")
+        else:
+            print("⚠️ Skipping runtime validation because some files failed validation")
         
         print(f"✅ Upgrade complete! {successful}/{total} files upgraded successfully")
         print(f"📄 Report generated: {report_path}")

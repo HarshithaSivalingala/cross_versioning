@@ -7,3 +7,4 @@ env/
 *.pyd
 */.DS_Store
 .env
+examples/.venv/
