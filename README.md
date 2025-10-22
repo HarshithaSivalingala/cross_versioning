@@ -42,6 +42,10 @@ streamlit run ui/app.py
   {
     "command": ["python", "main.py"],
     "timeout": 180,
+    "setup_commands": [
+      "wget https://example.com/data.zip",
+      ["python", "scripts/setup.py"]
+    ],
     "skip_install": false,
     "force_reinstall": false,
     "shell": false,
@@ -50,7 +54,7 @@ streamlit run ui/app.py
     "max_log_chars": 6000
   }
   ```
-  Fields are optional unless noted; remove any values you don't need. `command` accepts either a string (run via the shell) or a list of arguments.
+  Fields are optional unless noted; remove any values you don't need. `command` accepts either a string (run via the shell) or a list of arguments. `setup_commands` runs before the main command and accepts shell strings or argument lists for more controlled execution.
 - Optional knobs (env vars override config):
   - `ML_UPGRADER_RUNTIME_TIMEOUT` (seconds, default `120`)
   - `ML_UPGRADER_RUNTIME_SKIP_INSTALL=1` to skip dependency installs (useful for air-gapped runs)
@@ -58,6 +62,17 @@ streamlit run ui/app.py
   - `ML_UPGRADER_MAX_RUNTIME_LOG_CHARS` to control log truncation length
   - `ML_UPGRADER_RUNTIME_CONFIG` to point at a custom config path
 - macOS archive artifacts (`__MACOSX` folders and `._filename` resource forks) and binary `.py` placeholders are automatically skipped during upgrades.
+
+### Sample Legacy Project
+
+- The repository ships with `examples/sample_project` and a ready-to-upload
+  archive at `examples/sample_project.zip`.
+- This project covers TensorFlow 1.x, PyTorch, and NumPy deprecations, plus
+  runtime setup commands that generate a synthetic dataset before running a
+  smoke test.
+- Use it to exercise the full upgrade workflow: upload the zip (or point the
+  CLI at the directory), let the agent modernise the code base, then re-run the
+  bundled setup and runtime commands to confirm the upgrade.
 
 ## Project Structure
 
@@ -75,6 +90,10 @@ ml-upgrader/
 │   └── cli.py                # Command line interface
 ├── ui/
 │   └── app.py                # Streamlit web interface
+├── examples/
+│   ├── example1/             # Minimal TensorFlow 1.x + NumPy sample
+│   ├── example1_upgraded/    # Result after an example upgrade pass
+│   └── sample_project/       # Comprehensive legacy project with setup commands
 ├── tests/                    # Unit tests
 ├── requirements.txt
 ├── setup.py

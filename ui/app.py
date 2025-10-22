@@ -66,6 +66,46 @@ def _parse_runtime_env(raw: str):
         normalized[key] = "" if value is None else str(value)
     return normalized
 
+
+def _parse_setup_commands(raw: str):
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        # Interpret as newline-separated shell commands
+        return [line.strip() for line in raw.splitlines() if line.strip()]
+
+    if not isinstance(parsed, list):
+        raise ValueError("Setup commands must be a JSON array.")
+
+    normalized = []
+    for idx, entry in enumerate(parsed):
+        label = f"Setup command #{idx + 1}"
+        if isinstance(entry, str):
+            stripped = entry.strip()
+            if not stripped:
+                raise ValueError(f"{label} cannot be empty.")
+            normalized.append(stripped)
+        elif isinstance(entry, (list, tuple)):
+            command_parts = []
+            for part in entry:
+                if isinstance(part, (str, int, float)):
+                    command_parts.append(str(part))
+                else:
+                    raise ValueError(f"{label} list items must be strings or numbers.")
+            if not command_parts:
+                raise ValueError(f"{label} list cannot be empty.")
+            normalized.append(command_parts)
+        elif isinstance(entry, (int, float)):
+            normalized.append(str(entry))
+        else:
+            raise ValueError(f"{label} must be a string or list of strings.")
+
+    return normalized
+
 def main():
     st.set_page_config(
         page_title="ML Repo Upgrader", 
@@ -93,6 +133,7 @@ def main():
         "cwd": "",
         "env": '{"PYTHONPATH": "src"}',
         "max_log_chars": 6000,
+        "setup_commands": "",
     }
 
     with st.sidebar:
@@ -169,6 +210,11 @@ def main():
                     "Environment variables (JSON)",
                     value=runtime_ui_state["env"],
                     help='Example: {"PYTHONPATH": "src"}'
+                )
+                runtime_ui_state["setup_commands"] = st.text_area(
+                    "Setup commands (optional)",
+                    value=runtime_ui_state["setup_commands"],
+                    help="Commands to run before the runtime command. Use newline-separated shell commands or a JSON array (e.g. [\"wget ...\", [\"python\", \"scripts/setup.py\"]])."
                 )
                 runtime_ui_state["max_log_chars"] = st.number_input(
                     "Max runtime log characters",
@@ -250,6 +296,12 @@ def main():
                             st.error(f"Runtime environment error: {exc}")
                             return
 
+                        try:
+                            setup_commands = _parse_setup_commands(runtime_ui_state["setup_commands"])
+                        except ValueError as exc:
+                            st.error(f"Setup commands error: {exc}")
+                            return
+
                         runtime_config_payload = {
                             "command": runtime_command,
                             "timeout": int(runtime_ui_state["timeout"]),
@@ -263,6 +315,8 @@ def main():
                         runtime_cwd = (runtime_ui_state["cwd"] or "").strip()
                         if runtime_cwd:
                             runtime_config_payload["cwd"] = runtime_cwd
+                        if setup_commands:
+                            runtime_config_payload["setup_commands"] = setup_commands
                     
                     with st.spinner("🔄 Upgrading repository... This may take a few minutes."):
                         

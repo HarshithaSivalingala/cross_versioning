@@ -1,0 +1,15 @@
+{
+  "command": ["python", "main.py"],
+  "timeout": 90,
+  "setup_commands": [
+    ["python", "scripts/download_data.py"],
+    "python scripts/preprocess_data.py"
+  ],
+  "skip_install": true,
+  "force_reinstall": false,
+  "cwd": "",
+  "env": {
+    "PYTHONPATH": "."
+  },
+  "max_log_chars": 4000
+}

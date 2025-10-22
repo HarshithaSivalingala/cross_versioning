@@ -229,6 +229,85 @@ class TestValidator:
         auto_installs = [cmd for cmd, _ in recorded_commands if "missingpkg" in cmd]
         assert auto_installs, "Expected auto installation of missing module"
 
+    def test_runtime_validation_runs_setup_commands(self, tmp_path, monkeypatch):
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+
+        (project_root / "main.py").write_text(
+            "def main():\n    return 0\n\nif __name__ == '__main__':\n    main()\n",
+            encoding="utf-8",
+        )
+
+        runtime_config = {
+            "runtime": {
+                "command": ["python", "main.py"],
+                "setup_commands": [
+                    "echo setup-one",
+                    ["python", "-c", "print('setup-two')"],
+                ],
+                "skip_install": True,
+            }
+        }
+        (project_root / "ml_upgrader_runtime.json").write_text(
+            json.dumps(runtime_config),
+            encoding="utf-8",
+        )
+
+        fake_venv = tmp_path / "fake_venv"
+        (fake_venv / "bin").mkdir(parents=True)
+        fake_python = fake_venv / "bin" / "python"
+        fake_python.write_text("", encoding="utf-8")
+
+        import src.runtime_validation as runtime_validation  # noqa: WPS433
+
+        monkeypatch.setattr(runtime_validation, "_select_venv_path", lambda _: str(fake_venv))
+        monkeypatch.setattr(
+            runtime_validation,
+            "_resolve_venv_paths",
+            lambda path: (
+                os.path.join(path, "bin"),
+                os.path.join(path, "bin", "python"),
+                os.path.join(path, "bin", "pip"),
+            ),
+        )
+
+        recorded_commands = []
+
+        def fake_run_subprocess(cmd, *, cwd=None, env=None, timeout=None, shell=False):
+            recorded_commands.append((cmd, shell, cwd))
+            return {
+                "command": runtime_validation._stringify_command(cmd, shell),
+                "returncode": 0,
+                "stdout": "",
+                "stderr": "",
+                "timed_out": False,
+            }
+
+        monkeypatch.setattr(runtime_validation, "_run_subprocess", fake_run_subprocess)
+
+        is_valid, error = validate_repository(str(project_root))
+
+        assert is_valid is True
+        assert error is None
+        assert len(recorded_commands) == 3
+
+        setup_one, shell_one, cwd_one = recorded_commands[0]
+        assert setup_one == "echo setup-one"
+        assert shell_one is True
+        assert cwd_one == str(project_root)
+
+        setup_two, shell_two, cwd_two = recorded_commands[1]
+        assert isinstance(setup_two, list)
+        assert setup_two[:3] == ["python", "-c", "print('setup-two')"]
+        assert shell_two is False
+        assert cwd_two == str(project_root)
+
+        runtime_cmd, runtime_shell, runtime_cwd = recorded_commands[2]
+        assert isinstance(runtime_cmd, list)
+        assert "main.py" in runtime_cmd
+        assert runtime_shell is False
+        assert runtime_cwd == str(project_root)
+
     def test_dependency_install_fallbacks_to_latest(self, tmp_path, monkeypatch):
         project_root = tmp_path / "project"
         project_root.mkdir()

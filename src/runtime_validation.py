@@ -50,6 +50,7 @@ def perform_project_runtime_validation(project_root: str) -> Tuple[bool, Optiona
             runtime_cwd=runtime_settings["cwd"],
             shell_preference=runtime_settings["shell_preference"],
             command_label=runtime_settings["command_label"],
+            setup_commands=runtime_settings.get("setup_commands"),
         )
         if not success:
             return False, runtime_error
@@ -212,6 +213,30 @@ def _load_runtime_config(project_root: str) -> Tuple[Dict[str, Any], Optional[st
     return {}, None, None
 
 
+def _normalize_command_value(value: Any, context: str) -> Union[str, List[str]]:
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError(f"{context} cannot be empty")
+        return normalized
+    if isinstance(value, (int, float)):
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError(f"{context} cannot be empty")
+        return normalized
+    if isinstance(value, (list, tuple)):
+        command_list: List[str] = []
+        for item in value:
+            if isinstance(item, (str, int, float)):
+                command_list.append(str(item))
+            else:
+                raise ValueError(f"{context} list items must be strings or numbers")
+        if not command_list:
+            raise ValueError(f"{context} list cannot be empty")
+        return command_list
+    raise ValueError(f"{context} must be a string or list")
+
+
 def _parse_runtime_config(config: Dict[str, Any], config_path: Optional[str]) -> Tuple[Dict[str, Any], Optional[str]]:
     if not config:
         return {}, None
@@ -219,24 +244,13 @@ def _parse_runtime_config(config: Dict[str, Any], config_path: Optional[str]) ->
     parsed: Dict[str, Any] = {}
 
     if "command" in config:
-        command_value = config["command"]
-        if isinstance(command_value, str):
-            command_value = command_value.strip()
-            if not command_value:
-                return {}, f"Runtime config {config_path} field 'command' cannot be empty"
-            parsed["command"] = command_value
-        elif isinstance(command_value, (list, tuple)):
-            command_list = []
-            for item in command_value:
-                if isinstance(item, (str, int, float)):
-                    command_list.append(str(item))
-                else:
-                    return {}, f"Runtime config {config_path} field 'command' list items must be strings"
-            if not command_list:
-                return {}, f"Runtime config {config_path} field 'command' list cannot be empty"
-            parsed["command"] = command_list
-        else:
-            return {}, f"Runtime config {config_path} field 'command' must be a string or list"
+        try:
+            parsed["command"] = _normalize_command_value(
+                config["command"],
+                f"Runtime config {config_path} field 'command'",
+            )
+        except ValueError as exc:
+            return {}, str(exc)
 
     if "timeout" in config:
         try:
@@ -273,6 +287,39 @@ def _parse_runtime_config(config: Dict[str, Any], config_path: Optional[str]) ->
             if not isinstance(config[key], str):
                 return {}, f"Runtime config {config_path} field '{key}' must be a string"
             parsed[key] = config[key]
+
+    if "setup_commands" in config:
+        setup_value = config["setup_commands"]
+        setup_commands: List[Union[str, List[str]]] = []
+        if isinstance(setup_value, str):
+            lines = [line.strip() for line in setup_value.splitlines() if line.strip()]
+            for idx, line in enumerate(lines):
+                try:
+                    setup_commands.append(
+                        _normalize_command_value(
+                            line,
+                            f"Runtime config {config_path} field 'setup_commands[{idx}]'",
+                        )
+                    )
+                except ValueError as exc:
+                    return {}, str(exc)
+        elif isinstance(setup_value, list):
+            for idx, entry in enumerate(setup_value):
+                try:
+                    setup_commands.append(
+                        _normalize_command_value(
+                            entry,
+                            f"Runtime config {config_path} field 'setup_commands[{idx}]'",
+                        )
+                    )
+                except ValueError as exc:
+                    return {}, str(exc)
+        elif setup_value is None:
+            setup_commands = []
+        else:
+            return {}, f"Runtime config {config_path} field 'setup_commands' must be a list or string"
+
+        parsed["setup_commands"] = setup_commands
 
     return parsed, None
 
@@ -338,6 +385,7 @@ def _resolve_runtime_settings(project_root: str) -> Tuple[Optional[Dict[str, Any
         "env": parsed_config.get("env", {}),
         "cwd": runtime_cwd,
         "shell_preference": parsed_config.get("shell"),
+        "setup_commands": parsed_config.get("setup_commands", []),
     }
 
     return settings, None
@@ -509,6 +557,7 @@ def _run_runtime_validation(
     runtime_cwd: Optional[str],
     shell_preference: Optional[bool],
     command_label: Optional[str],
+    setup_commands: Optional[List[Union[str, List[str]]]] = None,
 ) -> Tuple[bool, Optional[str]]:
     if not project_root or not os.path.isdir(project_root):
         label_suffix = f" ({command_label})" if command_label else ""
@@ -582,6 +631,25 @@ def _run_runtime_validation(
     env = base_env.copy()
     env["VIRTUAL_ENV"] = venv_path
     env["PATH"] = _prepend_to_path(venv_bin, base_env.get("PATH", ""))
+
+    setup_commands = setup_commands or []
+    for index, raw_setup in enumerate(setup_commands):
+        setup_prepared, setup_shell = _prepare_command(raw_setup, shell_preference)
+        setup_result = _run_subprocess(
+            setup_prepared,
+            cwd=runtime_directory,
+            env=env,
+            timeout=timeout,
+            shell=setup_shell,
+        )
+        step_name = f"setup_command[{index}]"
+        logs.append(_step_log(step_name, setup_result))
+        if setup_result["timed_out"]:
+            reason = f"Setup command #{index + 1} timed out before runtime execution"
+            return False, _format_runtime_error(command_repr, logs, reason, log_limit)
+        if setup_result["returncode"]:
+            reason = f"Setup command #{index + 1} failed before runtime execution"
+            return False, _format_runtime_error(command_repr, logs, reason, log_limit)
 
     runtime_result = _run_subprocess(
         prepared_command,
