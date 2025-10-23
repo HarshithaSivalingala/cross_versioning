@@ -8,4 +8,4 @@ env/
 */.DS_Store
 .env
 examples/.venv/
-examples/.DS_Store
+**/.DS_Store
