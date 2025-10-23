@@ -2,7 +2,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 if __package__ is None or __package__ == "":
     _CURRENT_DIR = Path(__file__).resolve().parent
@@ -17,7 +17,7 @@ if __package__ is None or __package__ == "":
 else:
     from . import agentic_upgrader, dependency_upgrader, report_generator, validator
 
-def upgrade_repo(old_repo: str, new_repo: str) -> str:
+def upgrade_repo(old_repo: str, new_repo: str, dependency_overrides: Optional[Dict[str, str]] = None) -> str:
     """
     Upgrade entire repository with comprehensive reporting
     Returns path to generated report
@@ -29,12 +29,19 @@ def upgrade_repo(old_repo: str, new_repo: str) -> str:
     try:
         # Initialize components
         report_generator_instance = report_generator.UpgradeReportGenerator()
-        dependency_updater_instance = dependency_upgrader.DependencyUpdater()
+        dependency_updater_instance = dependency_upgrader.DependencyUpdater(dependency_overrides)
         
         # Setup output directory
         if os.path.exists(new_repo):
             shutil.rmtree(new_repo)
-        shutil.copytree(old_repo, new_repo)
+
+        def _ignore_env_dirs(_, names):
+            ignored = []
+            if ".venv" in names:
+                ignored.append(".venv")
+            return ignored
+
+        shutil.copytree(old_repo, new_repo, ignore=_ignore_env_dirs)
         
         print(f"Starting repo upgrade: {old_repo} → {new_repo}")
         

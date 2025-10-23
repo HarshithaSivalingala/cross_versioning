@@ -1,11 +1,17 @@
-import streamlit as st
-import zipfile
+import functools
+import json
 import os
 import shutil
-import tempfile
 import sys
-import json
+import tempfile
+import zipfile
+
+from packaging import version as packaging_version
+from packaging.requirements import InvalidRequirement, Requirement
 from dotenv import load_dotenv
+from urllib import error as url_error, request as url_request
+
+import streamlit as st
 
 # Simple path fix
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -14,6 +20,98 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 import repo_upgrader
 
 load_dotenv()
+
+SELECT_LIBRARY_PLACEHOLDER = "-- Select a library --"
+SELECT_VERSION_PLACEHOLDER = "-- Select a version --"
+SPEC_PREFIXES = (">", "<", "=", "!", "~")
+
+
+def _normalize_version_specifier(raw: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    if value[0] not in SPEC_PREFIXES:
+        return f"=={value}"
+    return value
+
+
+def _parse_requirements_file(path: str):
+    packages = []
+    seen = set()
+    try:
+        with open(path, "r") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if stripped.startswith(("-r", "--", "-c")):
+                    continue
+                try:
+                    requirement = Requirement(stripped)
+                except InvalidRequirement:
+                    continue
+                name = requirement.name
+                if name and name.lower() not in seen:
+                    seen.add(name.lower())
+                    packages.append(name)
+    except OSError:
+        return []
+    return packages
+
+
+def _discover_requirements_packages(repo_root: str):
+    packages = []
+    seen = set()
+    for root, _, files in os.walk(repo_root):
+        if "requirements.txt" in files:
+            file_path = os.path.join(root, "requirements.txt")
+            for name in _parse_requirements_file(file_path):
+                lowered = name.lower()
+                if lowered not in seen:
+                    seen.add(lowered)
+                    packages.append(name)
+    return sorted(packages, key=lambda item: item.lower())
+
+
+@functools.lru_cache(maxsize=64)
+def _fetch_available_versions(package: str):
+    package = (package or "").strip()
+    if not package:
+        return []
+
+    url = f"https://pypi.org/pypi/{package}/json"
+    try:
+        with url_request.urlopen(url, timeout=5) as response:
+            if response.status != 200:
+                return []
+            data = json.loads(response.read().decode("utf-8"))
+    except (url_error.URLError, url_error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError):
+        return []
+
+    releases = data.get("releases") or {}
+    pairs = []
+    for ver, files in releases.items():
+        if not files:
+            continue
+        try:
+            parsed = packaging_version.parse(ver)
+        except Exception:
+            continue
+        pairs.append((parsed, ver))
+
+    pairs.sort(key=lambda item: item[0], reverse=True)
+    return [ver for _, ver in pairs[:50]]
+
+
+def _write_filtered_zip(source_dir: str, destination_zip: str, excluded_dirs=None):
+    excluded = set(excluded_dirs or [])
+    with zipfile.ZipFile(destination_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+        for root, dirs, files in os.walk(source_dir):
+            dirs[:] = [d for d in dirs if d not in excluded]
+            for filename in files:
+                file_path = os.path.join(root, filename)
+                rel_path = os.path.relpath(file_path, source_dir)
+                archive.write(file_path, rel_path)
 
 
 def _parse_runtime_command(raw: str):
@@ -274,9 +372,75 @@ def main():
                         st.text(f"📄 {file}")
                     if len(python_files) > 10:
                         st.text(f"... and {len(python_files) - 10} more files")
+
+                st.subheader("🎯 Dependency Update Focus")
+                st.caption("Choose the dependency to upgrade; the rest stay aligned with its compatibility metadata.")
+
+                project_packages = _discover_requirements_packages(old_repo_path)
+                library_choice = None
+                version_choice = None
+
+                if project_packages:
+                    library_options = [SELECT_LIBRARY_PLACEHOLDER] + project_packages
+                    library_selection = st.selectbox(
+                        "Library name",
+                        options=library_options,
+                        index=0,
+                        key="dependency_update_library_select",
+                    )
+
+                    if library_selection != SELECT_LIBRARY_PLACEHOLDER:
+                        library_choice = library_selection
+                        versions_list = _fetch_available_versions(library_choice)
+                        if versions_list:
+                            version_options = [SELECT_VERSION_PLACEHOLDER] + versions_list
+                            version_selection = st.selectbox(
+                                "Target version",
+                                options=version_options,
+                                index=0,
+                                key="dependency_update_version_select",
+                                help="Available releases from PyPI (newest first).",
+                            )
+                            if version_selection != SELECT_VERSION_PLACEHOLDER:
+                                version_choice = version_selection
+                        else:
+                            st.warning(
+                                f"Couldn't retrieve versions for {library_choice}. Enter the desired version manually."
+                            )
+                            manual_version = st.text_input(
+                                "Target version or specifier",
+                                placeholder="e.g. 2.15.0 or >=2.15.0",
+                                key="dependency_update_version_manual",
+                            )
+                            if manual_version.strip():
+                                version_choice = manual_version.strip()
+                else:
+                    st.warning("No requirements.txt found. Enter the dependency details manually.")
+                    manual_library = st.text_input(
+                        "Library name",
+                        placeholder="e.g. tensorflow",
+                        key="dependency_update_library_manual",
+                    )
+                    if manual_library.strip():
+                        library_choice = manual_library.strip()
+                    manual_version = st.text_input(
+                        "Target version or specifier",
+                        placeholder="e.g. 2.15.0 or >=2.15.0",
+                        key="dependency_update_version_manual",
+                    )
+                    if manual_version.strip():
+                        version_choice = manual_version.strip()
                 
                 # Upgrade button
                 if st.button("🚀 Start Upgrade", type="primary", use_container_width=True):
+
+                    if not library_choice or not version_choice:
+                        st.error("Select a library and version before starting the upgrade.")
+                        return
+
+                    dependency_overrides = {
+                        library_choice: _normalize_version_specifier(version_choice)
+                    }
 
                     runtime_config_payload = None
                     if runtime_ui_state["enabled"]:
@@ -343,7 +507,11 @@ def main():
                                     runtime_config_path = runtime_temp.name
                                     os.environ["ML_UPGRADER_RUNTIME_CONFIG"] = runtime_config_path
 
-                                report_path = repo_upgrader.upgrade_repo(old_repo_path, new_repo_path)
+                                report_path = repo_upgrader.upgrade_repo(
+                                    old_repo_path,
+                                    new_repo_path,
+                                    dependency_overrides=dependency_overrides,
+                                )
                             finally:
                                 if runtime_config_path and os.path.exists(runtime_config_path):
                                     os.unlink(runtime_config_path)
@@ -356,9 +524,10 @@ def main():
                             
                             status_text.text("📄 Generating report...")
                             
-                            # Create downloadable zip
+                            # Create downloadable zip without virtual environments
                             output_zip = os.path.join(temp_dir, "upgraded_repo.zip")
-                            shutil.make_archive(output_zip[:-4], 'zip', new_repo_path)
+                            excluded_dirs = {".venv", ".ml_upgrader_venv", "__pycache__"}
+                            _write_filtered_zip(new_repo_path, output_zip, excluded_dirs=excluded_dirs)
                             
                             progress_bar.progress(100)
                             status_text.text("✅ Upgrade complete!")

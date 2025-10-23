@@ -7,7 +7,7 @@ to use the latest APIs for TensorFlow, PyTorch, NumPy, JAX, and other ML librari
 
 __version__ = "1.0.0"
 
-from typing import Any
+from typing import Any, Dict, Optional
 
 __all__ = [
     "upgrade_repo",
@@ -17,10 +17,14 @@ __all__ = [
 ]
 
 
-def upgrade_repo(old_repo: str, new_repo: str) -> str:
+def upgrade_repo(
+    old_repo: str,
+    new_repo: str,
+    dependency_overrides: Optional[Dict[str, str]] = None,
+) -> str:
     from .repo_upgrader import upgrade_repo as _upgrade_repo
 
-    return _upgrade_repo(old_repo, new_repo)
+    return _upgrade_repo(old_repo, new_repo, dependency_overrides)
 
 
 def upgrade_file(input_path: str, output_path: str) -> Any:

@@ -1,8 +1,16 @@
 import os
 from typing import Optional
-import openai
+
 from dotenv import load_dotenv
-from together import Together
+try:
+    from together import Together
+except ModuleNotFoundError:  # pragma: no cover - optional dependency for tests
+    Together = None  # type: ignore[assignment]
+
+try:
+    import openai
+except ModuleNotFoundError:  # pragma: no cover - optional dependency for tests
+    openai = None  # type: ignore[assignment]
 
 load_dotenv()
 
@@ -27,6 +35,9 @@ def _extract_content(response) -> str:
 
 
 def _generate_together(prompt: str, model: Optional[str] = None) -> str:
+    if Together is None:
+        raise RuntimeError("together package is not installed; cannot use Together provider.")
+
     api_key = _require_env("TOGETHER_API_KEY")
     model_name = model or os.getenv("TOGETHER_MODEL", DEFAULT_TOGETHER_MODEL)
 
@@ -39,6 +50,9 @@ def _generate_together(prompt: str, model: Optional[str] = None) -> str:
 
 
 def _generate_openrouter(prompt: str, model: Optional[str] = None) -> str:
+    if openai is None:
+        raise RuntimeError("openai package is not installed; cannot use OpenRouter provider.")
+
     api_key = _require_env("OPENROUTER_API_KEY")
     model_name = model or os.getenv("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
     base_url = os.getenv("OPENROUTER_BASE_URL", DEFAULT_OPENROUTER_BASE_URL)
