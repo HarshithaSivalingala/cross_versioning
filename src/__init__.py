@@ -21,10 +21,19 @@ def upgrade_repo(
     old_repo: str,
     new_repo: str,
     dependency_overrides: Optional[Dict[str, str]] = None,
+    *,
+    verify_runtime_outputs: bool = True,
+    progress_callback=None,
 ) -> str:
     from .repo_upgrader import upgrade_repo as _upgrade_repo
 
-    return _upgrade_repo(old_repo, new_repo, dependency_overrides)
+    return _upgrade_repo(
+        old_repo,
+        new_repo,
+        dependency_overrides,
+        verify_runtime_outputs=verify_runtime_outputs,
+        progress_callback=progress_callback,
+    )
 
 
 def upgrade_file(input_path: str, output_path: str) -> Any:

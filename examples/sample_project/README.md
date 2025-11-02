@@ -29,3 +29,19 @@ The `ml_upgrader_runtime.json` file enables the following behaviour:
 The runtime config sets `skip_install` to `true` so these quick smoke tests do
 not attempt to install heavy frameworks. You can flip this to `false` after the
 upgrader modernises the dependencies if you want to exercise the full stack.
+
+### Verifying Runtime Outputs
+
+Run the helper script below to capture a baseline run and ensure subsequent
+executions emit the same stdout/stderr:
+
+```bash
+cd examples/sample_project
+python scripts/verify_runtime_outputs.py
+```
+
+On success you will see matching outputs saved under
+`.ml-upgrader/runtime_outputs/sample_baseline` and `sample_check`. The Streamlit
+UI exposes the same behaviour through the **Compare runtime outputs against
+baseline** toggle—enable it to have the upgrader collect these artifacts for
+the legacy repository and surface any regressions after the upgrade.

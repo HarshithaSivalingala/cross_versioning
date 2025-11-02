@@ -131,7 +131,12 @@ class CodeFile:
     content: str
 
 
-def validate_repository(root_path: str) -> Tuple[bool, Optional[str]]:
+def validate_repository(
+    root_path: str,
+    *,
+    runtime_output_dir: Optional[str] = None,
+    runtime_compare_dir: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
     """Validate all Python files under root_path, then run runtime validation once."""
     code_files: List[CodeFile] = []
     for current_root, _, filenames in os.walk(root_path):
@@ -157,7 +162,11 @@ def validate_repository(root_path: str) -> Tuple[bool, Optional[str]]:
     if not code_files:
         return True, None
 
-    runtime_ok, runtime_error = perform_project_runtime_validation(root_path)
+    runtime_ok, runtime_error = perform_project_runtime_validation(
+        root_path,
+        output_capture_dir=runtime_output_dir,
+        compare_with_dir=runtime_compare_dir,
+    )
     if not runtime_ok:
         return False, runtime_error
 

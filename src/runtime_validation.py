@@ -1,7 +1,9 @@
+import difflib
 import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import hashlib
@@ -24,12 +26,26 @@ _RUNTIME_SEARCH_SKIP_DIRS = {
 }
 
 
-def perform_runtime_validation(file_path: str) -> Tuple[bool, Optional[str]]:
+def perform_runtime_validation(
+    file_path: str,
+    *,
+    output_capture_dir: Optional[str] = None,
+    compare_with_dir: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
     project_root = _detect_project_root(file_path)
-    return perform_project_runtime_validation(project_root)
+    return perform_project_runtime_validation(
+        project_root,
+        output_capture_dir=output_capture_dir,
+        compare_with_dir=compare_with_dir,
+    )
 
 
-def perform_project_runtime_validation(project_root: str) -> Tuple[bool, Optional[str]]:
+def perform_project_runtime_validation(
+    project_root: str,
+    *,
+    output_capture_dir: Optional[str] = None,
+    compare_with_dir: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
     project_root = os.path.abspath(project_root)
     if not os.path.isdir(project_root):
         return False, f"Project root '{project_root}' not found"
@@ -39,7 +55,7 @@ def perform_project_runtime_validation(project_root: str) -> Tuple[bool, Optiona
         return False, runtime_error
 
     if runtime_settings:
-        success, runtime_error = _run_runtime_validation(
+        success, runtime_error, runtime_details = _run_runtime_validation(
             project_root,
             runtime_settings["command"],
             timeout=runtime_settings["timeout"],
@@ -52,8 +68,24 @@ def perform_project_runtime_validation(project_root: str) -> Tuple[bool, Optiona
             command_label=runtime_settings["command_label"],
             setup_commands=runtime_settings.get("setup_commands"),
         )
+
+        if output_capture_dir:
+            store_error = _store_runtime_outputs(output_capture_dir, runtime_details)
+            if store_error:
+                return False, store_error
+
         if not success:
             return False, runtime_error
+
+        if compare_with_dir:
+            if not output_capture_dir:
+                return False, "Runtime output comparison requested without capture directory"
+            match, compare_error = _compare_runtime_outputs(output_capture_dir, compare_with_dir)
+            if not match:
+                return False, compare_error
+
+    elif compare_with_dir:
+        print("ℹ️ Runtime comparison skipped because no runtime command is configured.")
 
     return True, None
 
@@ -558,17 +590,35 @@ def _run_runtime_validation(
     shell_preference: Optional[bool],
     command_label: Optional[str],
     setup_commands: Optional[List[Union[str, List[str]]]] = None,
-) -> Tuple[bool, Optional[str]]:
+) -> Tuple[bool, Optional[str], Dict[str, Any]]:
+    details: Dict[str, Any] = {
+        "project_root": project_root,
+        "command_original": command,
+        "runtime_cwd": runtime_cwd,
+        "timeout": timeout,
+        "skip_install": skip_install,
+        "force_reinstall": force_reinstall,
+        "logs": [],
+    }
     if not project_root or not os.path.isdir(project_root):
         label_suffix = f" ({command_label})" if command_label else ""
-        return False, f"Runtime validation error{label_suffix}: project root '{project_root}' not found"
+        reason = f"Runtime validation error{label_suffix}: project root '{project_root}' not found"
+        details["reason"] = reason
+        return False, reason, details
 
     prepared_command, use_shell = _prepare_command(command, shell_preference)
     runtime_directory = runtime_cwd or project_root
     command_repr = _stringify_command(prepared_command, use_shell)
 
+    details["command_prepared"] = prepared_command
+    details["use_shell"] = use_shell
+    details["runtime_directory"] = runtime_directory
+    details["command_repr"] = command_repr
+
+    logs: List[Dict[str, Any]] = []
+    details["logs"] = logs
+
     if not os.path.isdir(runtime_directory):
-        logs: List[Dict[str, Any]] = []
         logs.append({
             "step": "runtime_command",
             "command": "skip",
@@ -578,22 +628,30 @@ def _run_runtime_validation(
             "timed_out": False,
         })
         reason = f"Runtime directory '{runtime_directory}' not found"
-        return False, _format_runtime_error(command_repr, logs, reason, log_limit)
+        details["reason"] = reason
+        details["success"] = False
+        error_message = _format_runtime_error(command_repr, logs, reason, log_limit)
+        return False, error_message, details
 
     venv_path = _select_venv_path(project_root)
+    details["venv_path"] = venv_path
     venv_bin, venv_python, _ = _resolve_venv_paths(venv_path)
-
-    logs: List[Dict[str, Any]] = []
 
     if not os.path.isfile(venv_python):
         create_result = _run_subprocess([sys.executable, "-m", "venv", venv_path], cwd=project_root)
         logs.append(_step_log("create_virtualenv", create_result))
         if create_result["timed_out"]:
             reason = "Virtual environment creation timed out"
-            return False, _format_runtime_error(command_repr, logs, reason, log_limit)
+            details["reason"] = reason
+            details["success"] = False
+            error_message = _format_runtime_error(command_repr, logs, reason, log_limit)
+            return False, error_message, details
         if create_result["returncode"] != 0:
             reason = "Failed to create virtual environment"
-            return False, _format_runtime_error(command_repr, logs, reason, log_limit)
+            details["reason"] = reason
+            details["success"] = False
+            error_message = _format_runtime_error(command_repr, logs, reason, log_limit)
+            return False, error_message, details
 
     adjusted_command, adjustment_note = _auto_adjust_python_script_command(
         prepared_command,
@@ -605,7 +663,11 @@ def _run_runtime_validation(
     prepared_command = adjusted_command
     command_repr = _stringify_command(prepared_command, use_shell)
 
+    details["command_prepared"] = prepared_command
+    details["command_repr"] = command_repr
+
     requirement_files = _discover_requirement_files(project_root, runtime_directory, prepared_command)
+    details["requirement_files"] = requirement_files
 
     install_ok = True
     if not skip_install:
@@ -631,8 +693,11 @@ def _run_runtime_validation(
     env = base_env.copy()
     env["VIRTUAL_ENV"] = venv_path
     env["PATH"] = _prepend_to_path(venv_bin, base_env.get("PATH", ""))
+    details["env_override"] = extra_env or {}
+    details["venv_path"] = venv_path
 
     setup_commands = setup_commands or []
+    details["setup_commands"] = setup_commands
     for index, raw_setup in enumerate(setup_commands):
         setup_prepared, setup_shell = _prepare_command(raw_setup, shell_preference)
         setup_result = _run_subprocess(
@@ -646,10 +711,16 @@ def _run_runtime_validation(
         logs.append(_step_log(step_name, setup_result))
         if setup_result["timed_out"]:
             reason = f"Setup command #{index + 1} timed out before runtime execution"
-            return False, _format_runtime_error(command_repr, logs, reason, log_limit)
+            details["reason"] = reason
+            details["success"] = False
+            error_message = _format_runtime_error(command_repr, logs, reason, log_limit)
+            return False, error_message, details
         if setup_result["returncode"]:
             reason = f"Setup command #{index + 1} failed before runtime execution"
-            return False, _format_runtime_error(command_repr, logs, reason, log_limit)
+            details["reason"] = reason
+            details["success"] = False
+            error_message = _format_runtime_error(command_repr, logs, reason, log_limit)
+            return False, error_message, details
 
     runtime_result = _run_subprocess(
         prepared_command,
@@ -661,7 +732,14 @@ def _run_runtime_validation(
     logs.append(_step_log("runtime_command", runtime_result))
 
     if install_ok and runtime_result["returncode"] == 0 and not runtime_result["timed_out"]:
-        return True, None
+        details["logs"] = logs
+        details["runtime_result"] = runtime_result
+        details["auto_install_attempted"] = False
+        details["success"] = True
+        return True, None, details
+
+    final_result = runtime_result
+    auto_install_attempted = False
 
     if (
         install_ok
@@ -671,6 +749,7 @@ def _run_runtime_validation(
     ):
         missing_module = _extract_missing_module(runtime_result.get("stderr", "") or runtime_result.get("stdout", ""))
         if missing_module:
+            auto_install_attempted = True
             auto_install_cmd = [venv_python, "-m", "pip", "install", missing_module]
             auto_install_result = _run_subprocess(auto_install_cmd, cwd=project_root)
             logs.append(_step_log(f"auto_install:{missing_module}", auto_install_result))
@@ -683,21 +762,32 @@ def _run_runtime_validation(
                     shell=use_shell,
                 )
                 logs.append(_step_log("runtime_command_retry", retry_result))
+                final_result = retry_result
                 if retry_result["returncode"] == 0 and not retry_result["timed_out"]:
-                    return True, None
-                runtime_result = retry_result
+                    details["logs"] = logs
+                    details["runtime_result"] = final_result
+                    details["auto_install_attempted"] = True
+                    details["success"] = True
+                    return True, None, details
+
+    details["logs"] = logs
+    details["runtime_result"] = final_result
+    details["auto_install_attempted"] = auto_install_attempted
 
     label_suffix = f" ({command_label})" if command_label else ""
-    if runtime_result["timed_out"]:
+    if final_result["timed_out"]:
         reason = f"Runtime command timed out after {timeout} seconds{label_suffix}"
-    elif runtime_result["returncode"]:
-        reason = f"Runtime command exited with status {runtime_result['returncode']}{label_suffix}"
+    elif final_result["returncode"]:
+        reason = f"Runtime command exited with status {final_result['returncode']}{label_suffix}"
     elif not install_ok:
         reason = f"Dependency installation failed{label_suffix}"
     else:
         reason = f"Runtime validation failed{label_suffix}"
 
-    return False, _format_runtime_error(command_repr, logs, reason, log_limit)
+    details["reason"] = reason
+    details["success"] = False
+    error_message = _format_runtime_error(command_repr, logs, reason, log_limit)
+    return False, error_message, details
 
 
 def _ensure_dependencies_installed(
@@ -939,6 +1029,222 @@ def _truncate_log(content: str, limit: int) -> str:
         return content
     remainder = len(content) - limit
     return f"{content[:limit]}\n... (truncated {remainder} characters)"
+
+
+def _store_runtime_outputs(target_dir: str, details: Dict[str, Any]) -> Optional[str]:
+    runtime_result = details.get("runtime_result") or {}
+    stdout = runtime_result.get("stdout") or ""
+    stderr = runtime_result.get("stderr") or ""
+    if not isinstance(stdout, str):
+        stdout = str(stdout)
+    if not isinstance(stderr, str):
+        stderr = str(stderr)
+
+    try:
+        if os.path.isdir(target_dir):
+            shutil.rmtree(target_dir)
+        os.makedirs(target_dir, exist_ok=True)
+    except OSError as exc:
+        return f"Failed to prepare runtime output directory '{target_dir}': {exc}"
+
+    try:
+        with open(os.path.join(target_dir, "stdout.txt"), "w", encoding="utf-8") as fh:
+            fh.write(stdout)
+        with open(os.path.join(target_dir, "stderr.txt"), "w", encoding="utf-8") as fh:
+            fh.write(stderr)
+    except OSError as exc:
+        return f"Failed to write runtime output files in '{target_dir}': {exc}"
+
+    metadata = {
+        "command": details.get("command_repr"),
+        "command_original": details.get("command_original"),
+        "runtime_directory": details.get("runtime_directory"),
+        "project_root": details.get("project_root"),
+        "success": bool(details.get("success")),
+        "returncode": runtime_result.get("returncode"),
+        "timed_out": runtime_result.get("timed_out"),
+        "reason": details.get("reason"),
+        "auto_install_attempted": bool(details.get("auto_install_attempted")),
+    }
+
+    try:
+        with open(os.path.join(target_dir, "metadata.json"), "w", encoding="utf-8") as fh:
+            json.dump(metadata, fh, indent=2)
+        with open(os.path.join(target_dir, "logs.json"), "w", encoding="utf-8") as fh:
+            json.dump(details.get("logs", []), fh, indent=2)
+    except OSError as exc:
+        return f"Failed to write runtime metadata in '{target_dir}': {exc}"
+    except TypeError as exc:
+        return f"Failed to serialise runtime logs for '{target_dir}': {exc}"
+
+    return None
+
+
+def _compare_runtime_outputs(current_dir: str, reference_dir: str) -> Tuple[bool, Optional[str]]:
+    if not reference_dir:
+        return True, None
+
+    if not os.path.isdir(reference_dir):
+        print(f"ℹ️ Baseline runtime outputs not found at {reference_dir}; skipping comparison.")
+        return True, None
+
+    if not os.path.isdir(current_dir):
+        return False, f"Captured runtime outputs directory '{current_dir}' not found for comparison"
+
+    baseline_meta_path = os.path.join(reference_dir, "metadata.json")
+    baseline_meta, baseline_meta_error = _load_json_file(baseline_meta_path)
+    if baseline_meta_error:
+        return False, f"Failed to read baseline runtime metadata: {baseline_meta_error}"
+
+    current_meta_path = os.path.join(current_dir, "metadata.json")
+    current_meta, current_meta_error = _load_json_file(current_meta_path)
+    if current_meta_error:
+        return False, f"Failed to read upgraded runtime metadata: {current_meta_error}"
+
+    if not baseline_meta:
+        return False, f"Baseline runtime metadata missing in '{reference_dir}'"
+    if not current_meta:
+        return False, f"Runtime metadata missing in '{current_dir}'"
+
+    if not baseline_meta.get("success"):
+        return False, f"Baseline runtime execution did not succeed; see '{reference_dir}' for details."
+
+    baseline_stdout_path = os.path.join(reference_dir, "stdout.txt")
+    baseline_stdout, baseline_stdout_error = _read_text_file(baseline_stdout_path)
+    if baseline_stdout_error:
+        return False, f"Failed to read baseline runtime stdout: {baseline_stdout_error}"
+
+    current_stdout_path = os.path.join(current_dir, "stdout.txt")
+    current_stdout, current_stdout_error = _read_text_file(current_stdout_path)
+    if current_stdout_error:
+        return False, f"Failed to read upgraded runtime stdout: {current_stdout_error}"
+
+    baseline_stderr_path = os.path.join(reference_dir, "stderr.txt")
+    baseline_stderr, baseline_stderr_error = _read_text_file(baseline_stderr_path)
+    if baseline_stderr_error:
+        return False, f"Failed to read baseline runtime stderr: {baseline_stderr_error}"
+
+    current_stderr_path = os.path.join(current_dir, "stderr.txt")
+    current_stderr, current_stderr_error = _read_text_file(current_stderr_path)
+    if current_stderr_error:
+        return False, f"Failed to read upgraded runtime stderr: {current_stderr_error}"
+
+    baseline_root = baseline_meta.get("project_root")
+    current_root = current_meta.get("project_root")
+
+    baseline_stdout = _normalize_runtime_output_text(baseline_stdout or "", baseline_root, current_root)
+    current_stdout = _normalize_runtime_output_text(current_stdout or "", baseline_root, current_root)
+    baseline_stderr = _normalize_runtime_output_text(baseline_stderr or "", baseline_root, current_root)
+    current_stderr = _normalize_runtime_output_text(current_stderr or "", baseline_root, current_root)
+
+    baseline_returncode = baseline_meta.get("returncode")
+    current_returncode = current_meta.get("returncode")
+    if baseline_returncode != current_returncode:
+        return False, (
+            "Runtime return code changed between baseline and upgraded runs "
+            f"(baseline {baseline_returncode}, upgraded {current_returncode}). "
+            f"See '{reference_dir}' and '{current_dir}'."
+        )
+
+    baseline_timeout = bool(baseline_meta.get("timed_out"))
+    current_timeout = bool(current_meta.get("timed_out"))
+    if baseline_timeout != current_timeout:
+        return False, (
+            "Runtime timeout status changed between baseline and upgraded runs. "
+            f"See '{reference_dir}' and '{current_dir}'."
+        )
+
+    if baseline_stdout != current_stdout:
+        diff = _generate_unified_diff(
+            baseline_stdout,
+            current_stdout,
+            from_label="baseline/stdout",
+            to_label="upgraded/stdout",
+        )
+        message = "Runtime stdout differs between baseline and upgraded runs."
+        if diff:
+            message += f"\nDiff:\n{diff}"
+        return False, message
+
+    if baseline_stderr != current_stderr:
+        diff = _generate_unified_diff(
+            baseline_stderr,
+            current_stderr,
+            from_label="baseline/stderr",
+            to_label="upgraded/stderr",
+        )
+        message = "Runtime stderr differs between baseline and upgraded runs."
+        if diff:
+            message += f"\nDiff:\n{diff}"
+        return False, message
+
+    return True, None
+
+
+def _normalize_runtime_output_text(content: str, baseline_root: Optional[str], current_root: Optional[str]) -> str:
+    normalized = content
+
+    def _replace_root(text: str, root: Optional[str]) -> str:
+        if not root:
+            return text
+        root_norm = os.path.normpath(root)
+        variants = {
+            root,
+            root_norm,
+            root_norm + os.sep,
+            root.rstrip(os.sep) + os.sep,
+        }
+        replacement = "<PROJECT_ROOT>"
+        for variant in variants:
+            if variant.endswith(os.sep):
+                normalized_variant = replacement + os.sep
+            else:
+                normalized_variant = replacement
+            text = text.replace(variant, normalized_variant)
+        return text
+
+    normalized = _replace_root(normalized, baseline_root)
+    normalized = _replace_root(normalized, current_root)
+
+    return normalized
+
+
+def _generate_unified_diff(expected: str, actual: str, *, from_label: str, to_label: str, max_lines: int = 60) -> str:
+    diff_lines = list(
+        difflib.unified_diff(
+            expected.splitlines(),
+            actual.splitlines(),
+            fromfile=from_label,
+            tofile=to_label,
+            lineterm="",
+        )
+    )
+    if max_lines and len(diff_lines) > max_lines:
+        diff_lines = diff_lines[:max_lines]
+        diff_lines.append("... diff truncated ...")
+    return "\n".join(diff_lines)
+
+
+def _load_json_file(path: str) -> Tuple[Optional[Any], Optional[str]]:
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh), None
+    except FileNotFoundError:
+        return None, f"file '{path}' not found"
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON in '{path}': {exc}"
+    except OSError as exc:
+        return None, f"error reading '{path}': {exc}"
+
+
+def _read_text_file(path: str) -> Tuple[Optional[str], Optional[str]]:
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read(), None
+    except FileNotFoundError:
+        return None, f"file '{path}' not found"
+    except OSError as exc:
+        return None, f"error reading '{path}': {exc}"
 
 
 def _prepend_to_path(value: str, existing: str) -> str:

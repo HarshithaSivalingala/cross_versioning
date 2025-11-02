@@ -29,11 +29,13 @@ def load_processed_data(data_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     except AttributeError:
         cast_features = features.astype(float)
 
-    print(f"Feature global mean (legacy API): {mean_value:.4f}")
+    print(f"Feature global mean: {mean_value:.4f}")
     return cast_features, labels
 
 
 def write_csv(path: Path, rows):
+    if not isinstance(path, Path):
+        path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)

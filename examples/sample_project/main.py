@@ -27,7 +27,8 @@ def summarize_dataset(data_path: Path) -> None:
         "label_stats": label_distribution,
         "observations": int(features.shape[0]),
     }
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    summary_text = json.dumps(summary, indent=2, ensure_ascii=False)
+    summary_path.write_text(summary_text, encoding="utf-8")
     print(f"Wrote summary to {summary_path}")
 
 
@@ -41,6 +42,7 @@ def _run_setup_pipeline(project_root: Path) -> None:
         result = subprocess.run(command, cwd=project_root)
         if result.returncode != 0:
             raise RuntimeError(f"Setup command failed: {' '.join(command)}")
+        print(f"Command completed with return code: {result.returncode}")
     print("Setup pipeline completed successfully.")
 
 

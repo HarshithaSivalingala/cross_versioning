@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 import tempfile
+from typing import Optional
 import zipfile
 
 from packaging import version as packaging_version
@@ -232,6 +233,7 @@ def main():
         "env": '{"PYTHONPATH": "src"}',
         "max_log_chars": 6000,
         "setup_commands": "",
+        "compare_outputs": True,
     }
 
     with st.sidebar:
@@ -321,8 +323,14 @@ def main():
                     value=int(runtime_ui_state["max_log_chars"]),
                     step=500
                 )
+                runtime_ui_state["compare_outputs"] = st.checkbox(
+                    "Compare runtime outputs against baseline",
+                    value=runtime_ui_state["compare_outputs"],
+                    help="Runs the configured runtime command on the original repository, captures stdout/stderr, and checks the upgraded run for regressions.",
+                )
             else:
                 st.caption("Runtime validation disabled. Enable above to mirror ml_upgrader_runtime.json settings.")
+                runtime_ui_state["compare_outputs"] = False
     
     # Main interface
     col1, col2 = st.columns([1, 1])
@@ -483,15 +491,30 @@ def main():
                             runtime_config_payload["setup_commands"] = setup_commands
                     
                     with st.spinner("🔄 Upgrading repository... This may take a few minutes."):
-                        
-                        # Progress tracking
+
+                        st.subheader("🔍 Upgrade Progress")
                         progress_bar = st.progress(0)
                         status_text = st.empty()
-                        
-                        # Start upgrade
-                        status_text.text("📦 Updating dependencies...")
-                        progress_bar.progress(10)
-                        
+                        log_placeholder = st.empty()
+                        log_messages = []
+
+                        def handle_progress(message: str, progress: Optional[float]) -> None:
+                            clean_message = (message or "").strip()
+                            if progress is not None:
+                                try:
+                                    numeric_progress = int(round(float(progress)))
+                                except (TypeError, ValueError):
+                                    numeric_progress = None
+                                if numeric_progress is not None:
+                                    bounded = max(0, min(100, numeric_progress))
+                                    progress_bar.progress(bounded)
+                            if clean_message:
+                                status_text.text(clean_message)
+                                log_messages.append(clean_message)
+                                log_placeholder.text("\n".join(log_messages[-50:]))
+
+                        status_text.text("Initializing upgrade...")
+
                         try:
                             # Set model
                             os.environ["ML_UPGRADER_MODEL"] = model
@@ -511,6 +534,8 @@ def main():
                                     old_repo_path,
                                     new_repo_path,
                                     dependency_overrides=dependency_overrides,
+                                    verify_runtime_outputs=runtime_ui_state["enabled"] and runtime_ui_state["compare_outputs"],
+                                    progress_callback=handle_progress,
                                 )
                             finally:
                                 if runtime_config_path and os.path.exists(runtime_config_path):
@@ -520,21 +545,19 @@ def main():
                                 elif runtime_config_payload is not None:
                                     os.environ.pop("ML_UPGRADER_RUNTIME_CONFIG", None)
 
-                            progress_bar.progress(90)
-                            
-                            status_text.text("📄 Generating report...")
-                            
+                            handle_progress("📦 Preparing downloadable archive...", 98)
+
                             # Create downloadable zip without virtual environments
                             output_zip = os.path.join(temp_dir, "upgraded_repo.zip")
                             excluded_dirs = {".venv", ".ml_upgrader_venv", "__pycache__"}
                             _write_filtered_zip(new_repo_path, output_zip, excluded_dirs=excluded_dirs)
-                            
-                            progress_bar.progress(100)
-                            status_text.text("✅ Upgrade complete!")
+
+                            handle_progress("✅ Upgrade artifacts ready.", 100)
                             
                             st.success("🎉 Repository upgraded successfully!")
                             
                         except Exception as e:
+                            handle_progress(f"❌ Upgrade failed: {str(e)}", None)
                             st.error(f"❌ Upgrade failed: {str(e)}")
                             return
                     

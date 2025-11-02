@@ -4,6 +4,7 @@ import tempfile
 
 import pytest
 
+import src.runtime_validation as runtime_validation
 from src.validator import validate_syntax, validate_code, validate_repository
 
 class TestValidator:
@@ -408,3 +409,133 @@ class TestValidator:
             cmd for cmd, _ in commands if cmd[:5] == [fake_python.as_posix(), "-m", "pip", "install", "tensorflow"]
         ]
         assert fallback_steps, "Expected fallback installation command"
+
+    def test_runtime_output_capture_and_compare(self, tmp_path, monkeypatch):
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        (project_root / "main.py").write_text("print('stub')\n", encoding="utf-8")
+
+        runtime_config = {
+            "runtime": {
+                "command": ["python", "main.py"],
+                "skip_install": True,
+            }
+        }
+        (project_root / "ml_upgrader_runtime.json").write_text(
+            json.dumps(runtime_config),
+            encoding="utf-8",
+        )
+
+        fake_venv = tmp_path / "fake_venv"
+        (fake_venv / "bin").mkdir(parents=True)
+        (fake_venv / "bin" / "python").write_text("", encoding="utf-8")
+
+        monkeypatch.setattr(runtime_validation, "_select_venv_path", lambda _: str(fake_venv))
+        monkeypatch.setattr(
+            runtime_validation,
+            "_resolve_venv_paths",
+            lambda path: (os.path.join(path, "bin"), os.path.join(path, "bin", "python"), os.path.join(path, "bin", "pip")),
+        )
+
+        baseline_dir = tmp_path / "baseline_outputs"
+        upgraded_dir = tmp_path / "upgraded_outputs"
+
+        def make_fake_subprocess(stdout_text: str):
+            def fake_run(cmd, *, cwd=None, env=None, timeout=None, shell=False):
+                command_repr = runtime_validation._stringify_command(cmd, shell)
+                cmd_list = cmd if isinstance(cmd, list) else [cmd]
+                if any(str(part).endswith("main.py") for part in cmd_list):
+                    return {
+                        "command": command_repr,
+                        "returncode": 0,
+                        "stdout": stdout_text,
+                        "stderr": "",
+                        "timed_out": False,
+                    }
+                return {
+                    "command": command_repr,
+                    "returncode": 0,
+                    "stdout": "",
+                    "stderr": "",
+                    "timed_out": False,
+                }
+
+            return fake_run
+
+        monkeypatch.setattr(runtime_validation, "_run_subprocess", make_fake_subprocess("baseline\n"))
+        ok, error = runtime_validation.perform_project_runtime_validation(
+            str(project_root),
+            output_capture_dir=str(baseline_dir),
+        )
+
+        assert ok is True
+        assert error is None
+        assert baseline_dir.is_dir()
+        assert (baseline_dir / "stdout.txt").read_text(encoding="utf-8") == "baseline\n"
+
+        monkeypatch.setattr(runtime_validation, "_run_subprocess", make_fake_subprocess("baseline\n"))
+        ok, error = runtime_validation.perform_project_runtime_validation(
+            str(project_root),
+            output_capture_dir=str(upgraded_dir),
+            compare_with_dir=str(baseline_dir),
+        )
+
+        assert ok is True
+        assert error is None
+        assert upgraded_dir.is_dir()
+        assert (upgraded_dir / "stdout.txt").read_text(encoding="utf-8") == "baseline\n"
+
+        monkeypatch.setattr(runtime_validation, "_run_subprocess", make_fake_subprocess("changed\n"))
+        ok, error = runtime_validation.perform_project_runtime_validation(
+            str(project_root),
+            output_capture_dir=str(upgraded_dir),
+            compare_with_dir=str(baseline_dir),
+        )
+
+        assert ok is False
+        assert error is not None
+        assert "stdout differs" in error
+        assert (upgraded_dir / "stdout.txt").read_text(encoding="utf-8") == "changed\n"
+
+    def test_runtime_output_comparison_normalises_project_paths(self, tmp_path):
+        baseline_dir = tmp_path / "baseline"
+        upgraded_dir = tmp_path / "upgraded"
+        baseline_dir.mkdir()
+        upgraded_dir.mkdir()
+
+        baseline_root = "/path/to/baseline"
+        upgraded_root = "/different/location/upgraded"
+
+        (baseline_dir / "stdout.txt").write_text(f"Output at {baseline_root}/data.txt\n", encoding="utf-8")
+        (baseline_dir / "stderr.txt").write_text("", encoding="utf-8")
+        (baseline_dir / "metadata.json").write_text(
+            json.dumps({
+                "project_root": baseline_root,
+                "success": True,
+                "returncode": 0,
+                "timed_out": False,
+            }),
+            encoding="utf-8",
+        )
+        (baseline_dir / "logs.json").write_text("[]", encoding="utf-8")
+
+        (upgraded_dir / "stdout.txt").write_text(f"Output at {upgraded_root}/data.txt\n", encoding="utf-8")
+        (upgraded_dir / "stderr.txt").write_text("", encoding="utf-8")
+        (upgraded_dir / "metadata.json").write_text(
+            json.dumps({
+                "project_root": upgraded_root,
+                "success": True,
+                "returncode": 0,
+                "timed_out": False,
+            }),
+            encoding="utf-8",
+        )
+        (upgraded_dir / "logs.json").write_text("[]", encoding="utf-8")
+
+        ok, error = runtime_validation._compare_runtime_outputs(
+            str(upgraded_dir),
+            str(baseline_dir),
+        )
+
+        assert ok is True
+        assert error is None
