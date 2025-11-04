@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 from typing import Optional
+from pathlib import Path
 import zipfile
 
 from packaging import version as packaging_version
@@ -14,11 +15,17 @@ from urllib import error as url_error, request as url_request
 
 import streamlit as st
 
-# Simple path fix
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+APP_DIR = Path(__file__).resolve().parent
 
-# Direct imports
-import repo_upgrader
+# Go up one more level to reach project root
+PROJECT_ROOT = APP_DIR.parent
+
+# Add project root to path
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Import the repo_upgrader module
+from src import repo_upgrader
 
 load_dotenv()
 
@@ -237,6 +244,7 @@ def main():
     }
 
     with st.sidebar:
+
         st.header("⚙️ Settings")
         
         existing_api_key = os.getenv("OPENROUTER_API_KEY", "")
@@ -261,6 +269,7 @@ def main():
             index=0,
             help="Choose the OpenRouter model; defaults to openai/gpt-4o-mini.",
         )
+
         
         # Advanced settings
         with st.expander("Advanced Settings"):
@@ -268,7 +277,37 @@ def main():
             os.environ["ML_UPGRADER_MAX_RETRIES"] = str(max_retries)
             
             show_progress = st.checkbox("Show detailed progress", True)
-
+            st.subheader("Upgrade Strategy")
+        
+            upgrade_mode = st.radio(
+                "Processing mode",
+                options=[
+                    "🎯 Smart (Dependency-Aware)",
+                    "⚡ Fast (Parallel)"
+                ],
+                index=0,  # Default to Smart mode
+                help=(
+                    "**Smart mode (Recommended):** Processes files in dependency order. "
+                    "Slower but maintains compatibility between files. Best for complex projects.\n\n"
+                    "**Fast mode:** Processes files in parallel. Much faster but may break "
+                    "inter-file dependencies. Best for simple projects or when speed is critical."
+                )
+            )
+            
+            # Convert selection to boolean flag
+            use_dependency_order = upgrade_mode.startswith("🎯")
+            
+            # Show info based on selection
+            if use_dependency_order:
+                st.info(
+                    "✅ Smart mode will analyze dependencies and upgrade files in order. "
+                    "This takes longer but ensures files remain compatible with each other."
+                )
+            else:
+                st.warning(
+                    "⚠️ Fast mode may break inter-file dependencies. "
+                    "Recommended only for simple projects or when speed is critical."
+                )
             runtime_ui_state["enabled"] = st.checkbox(
                 "Enable runtime validation",
                 value=runtime_ui_state["enabled"],
@@ -536,6 +575,7 @@ def main():
                                     dependency_overrides=dependency_overrides,
                                     verify_runtime_outputs=runtime_ui_state["enabled"] and runtime_ui_state["compare_outputs"],
                                     progress_callback=handle_progress,
+                                    use_dependency_order=use_dependency_order,
                                 )
                             finally:
                                 if runtime_config_path and os.path.exists(runtime_config_path):

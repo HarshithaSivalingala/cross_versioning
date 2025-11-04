@@ -60,6 +60,13 @@ Examples:
         action="store_true",
         help="Verbose output"
     )
+
+    parser.add_argument(
+    "--parallel",
+    action="store_true",
+    help="Use fast parallel mode instead of dependency-aware mode. "
+         "Parallel mode is faster but may break inter-file dependencies."
+    )
     
     args = parser.parse_args()
     

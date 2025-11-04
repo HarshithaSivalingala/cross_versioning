@@ -113,6 +113,85 @@ def build_prompt(code: str, error: Optional[str] = None) -> str:
             f"{code}\n"
         )
 
+def build_prompt_with_context(
+    code: str, 
+    dependency_context: Dict[str, str],
+    error: Optional[str] = None
+) -> str:
+    """
+    Build prompt for LLM with awareness of dependency interfaces.
+    
+    This helps the LLM maintain compatibility with files this code imports from.
+    By showing the LLM the interfaces of dependencies, it can ensure the upgraded
+    code calls functions correctly and uses the right types.
+    
+    Args:
+        code: The code to upgrade
+        dependency_context: Dict mapping file paths to their interface summaries
+        error: Optional error from previous attempt
+    
+    Returns:
+        Complete prompt string for the LLM
+    """
+    
+    base_prompt = (
+        "You are an expert Python ML code migration assistant.\n"
+        "Upgrade the following Python code to be fully compatible with the latest stable version(s) "
+        "of ONLY the libraries it already uses.\n\n"
+        "⚠️  RULES:\n"
+        "- Do NOT convert between frameworks (e.g., keep TensorFlow code in TensorFlow, PyTorch in PyTorch).\n"
+        "- Do NOT add new frameworks unless already imported in the code.\n"
+        "- Preserve all functionality and logic exactly.\n"
+        "- Apply only necessary migrations (remove deprecated APIs, update function signatures, fix types).\n"
+        "- Always return the ENTIRE corrected code.\n"
+    )
+    
+    # Add dependency context if available
+    if dependency_context:
+        context_section = "\n\n📚 DEPENDENCY CONTEXT:\n"
+        context_section += "This file imports from other files in the repository. "
+        context_section += "Here are their current interfaces (already upgraded):\n\n"
+        
+        for dep_path, interface in dependency_context.items():
+            dep_name = os.path.basename(dep_path)
+            context_section += f"### {dep_name} ###\n"
+            if interface.strip():
+                context_section += interface + "\n\n"
+            else:
+                context_section += "(empty or no public interface)\n\n"
+        
+        context_section += (
+            "⚠️  IMPORTANT: Your upgraded code MUST be compatible with these interfaces.\n"
+            "- Match function signatures exactly\n"
+            "- Use the same return types\n"
+            "- Don't assume different APIs than shown above\n"
+            "- If a function signature shows specific types, use them\n\n"
+        )
+        
+        base_prompt += context_section
+    
+    base_prompt += (
+        "```python\n"
+        "# upgraded code here\n"
+        "```"
+    )
+    
+    # Add error context if this is a retry
+    if error:
+        return (
+            f"{base_prompt}\n\n"
+            "The previously upgraded code failed with this error:\n"
+            f"{error}\n\n"
+            "Please fix the issue and return the full corrected file.\n\n"
+            f"Code to upgrade:\n{code}\n"
+        )
+    else:
+        return (
+            f"{base_prompt}\n\n"
+            "Code to upgrade:\n"
+            f"{code}\n"
+        )
+
 def extract_api_changes(old_code: str, new_code: str) -> List[str]:
     """Extract API changes between old and new code"""
     changes = []
