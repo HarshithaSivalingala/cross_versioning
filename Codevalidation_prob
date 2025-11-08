@@ -1,0 +1,91 @@
+The Core Problem -
+    When upgrading or auto-migrating code, we hit an infinite loop of validation:
+    Code might be wrong → we validate it with tests
+    Tests take too long → we generate validation scripts
+    But validation scripts might be wrong too → need to validate those
+    ...and now we are stuck forever
+    This isn’t just an engineering issue. It’s a theoretical limitation.
+
+Why It's Impossible to Fully Automate - 
+    Even running it doesn't prove equivalence if:
+    - Non-deterministic operations exist
+    - Full test coverage doesn't exist  
+    - Edge cases aren't tested
+    - Resource constraints prevent full execution
+
+===============================================================================================================================================================================================
+Approaches:
+--------------------------------------------
+1. Be Hoset - No Auto Validation
+    We Validate:
+
+    Syntax & imports
+    Type correctness
+    Code compiles
+
+    We Don’t Validate:
+
+    Functional equivalence
+    Performance or behavior
+    Edge cases
+---------------------------------------------
+2. Give Validation Templates , not Scripts
+But this as well needs a person to fill in the template (it doesn't matter right now if we provide a script or no)
+---------------------------------------------
+3. If 
+    there is a testsuite present for the project Let's try to run it .
+Else
+    Tell user to review it manually.
+    
+===============================================================================================================================================================================================
+
+Presentation - 
+(Q) How do you validate your model ?
+    - We don’t because that’s an infinite regression problem. We learned that LLM-generated validation code can’t be trusted either. Even Google and Meta rely on humans for final validation. Our goal is to automate the boring stuff, not replace judgment. Cannot automate full correctness checking ever.
+    We focus on:
+    Automating the mechanical parts (syntax, imports, types)
+    Running tests humans already trust
+    Providing reports and templates for manual validation
+    That’s what real companies do — and it works.
+
+(Q) Then what's the point of your project if it doesn't validate the code ?
+- 
+1. Migration is mechanical
+    - Most of the work in upgrading ML or Python code is tedious pattern replacement:
+    Updating deprecated APIs
+    Fixing import paths
+    Converting syntax (TensorFlow 1.x → 2.x )
+    Adjusting type hints and function signatures
+    Humans hate doing this, it’s error-prone, boring, and slow.
+    - Our tool automates the migration process.
+
+2. It Removes Trivial Human Errors
+    -Manual migrations often break in dumb ways:
+    Missed import
+    Wrong function name
+    Inconsistent API usage
+    - Our tool guarantees consistency and syntax correctness, instantly catching mistakes humans might overlook after hours of tedious find-and-replace.
+
+3. It Generates a Reliable Starting Point for Testing
+    -Humans and tests can’t work on broken code.
+    Our tool ensures:
+    The project compiles and runs
+    Tests can execute
+    Code is structurally sound
+    - That means the test phase starts from a stable baseline, not chaos. Without our tool, teams waste days just getting the code to run.
+
+4. It Produces Transparent Reports
+    - Our tool can generate :
+        Upgrade reports
+        Lists of all changes made
+        Warnings for errors
+    - That’s professional, auditable, and helps engineers understand what changed.
+
+5. It Saves Massive Time
+    - Manual Migration
+    Takes 2-3 weeks developer time
+    Multiple rounds of testing and debbuging
+    - With our tool, engineers can just focus on testing it.
+
+We don’t replace testing; we make it faster, safer, and more focused.
+Instead of spending two weeks fixing syntax and imports, spend that time validating real behavior.
