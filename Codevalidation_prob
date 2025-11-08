@@ -16,7 +16,7 @@ Why It's Impossible to Fully Automate -
 ===============================================================================================================================================================================================
 Approaches:
 --------------------------------------------
-1. Be Hoset - No Auto Validation
+1. Be Honest - No Auto Validation
     We Validate:
 
     Syntax & imports
@@ -30,7 +30,7 @@ Approaches:
     Edge cases
 ---------------------------------------------
 2. Give Validation Templates , not Scripts
-But this as well needs a person to fill in the template (it doesn't matter right now if we provide a script or no)
+But this as well needs a person to fill in the template (it doesn't matter right now if we provide a script or not)
 ---------------------------------------------
 3. If 
     there is a testsuite present for the project Let's try to run it .
