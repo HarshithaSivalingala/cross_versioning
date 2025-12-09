@@ -1,0 +1,1789 @@
+====================================================================================================
+ID       : sample_01_basic_session
+Framework: tensorflow
+Category : core/session
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+a = tf.constant(3.0)
+b = tf.constant(2.0)
+c = a * b
+
+with tf.Session() as sess:
+    result = sess.run(c)
+    print("Result:", result)
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+a = tf.constant(3.0)
+b = tf.constant(2.0)
+c = a * b
+
+print("Result:", c.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+a = tf.constant(3.0)
+b = tf.constant(2.0)
+c = a * b
+
+# Eager execution is enabled by default in TensorFlow 2.x, so we can directly evaluate the tensor.
+result = c.numpy()
+print("Result:", result)
+```
+
+RAW RESPONSE
+------------
+Here's the upgraded code that is fully compatible with the latest stable version of TensorFlow, following the specified rules:
+
+```python
+import tensorflow as tf
+
+a = tf.constant(3.0)
+b = tf.constant(2.0)
+c = a * b
+
+# Eager execution is enabled by default in TensorFlow 2.x, so we can directly evaluate the tensor.
+result = c.numpy()
+print("Result:", result)
+``` 
+
+This revised code removes the use of `tf.Session()` and `sess.run()`, directly utilizing eager execution features to obtain the result.
+
+====================================================================================================
+ID       : sample_02_placeholder_feed_dict
+Framework: tensorflow
+Category : placeholders_to_tensors
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+x = tf.placeholder(tf.float32, shape=[None])
+y = x * 2.0
+
+with tf.Session() as sess:
+    out = sess.run(y, feed_dict={x: [1.0, 2.0, 3.0]})
+    print(out)
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+x = tf.constant([1.0, 2.0, 3.0], dtype=tf.float32)
+y = x * 2.0
+print(y.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+x = tf.keras.Input(shape=(None,), dtype=tf.float32)
+y = x * 2.0
+
+model = tf.keras.Model(inputs=x, outputs=y)
+
+out = model.predict([[1.0], [2.0], [3.0]])
+print(out)
+```
+
+RAW RESPONSE
+------------
+Here's the upgraded code that complies with the given rules:
+
+```python
+import tensorflow as tf
+
+x = tf.keras.Input(shape=(None,), dtype=tf.float32)
+y = x * 2.0
+
+model = tf.keras.Model(inputs=x, outputs=y)
+
+out = model.predict([[1.0], [2.0], [3.0]])
+print(out)
+```
+
+====================================================================================================
+ID       : sample_03_placeholder_model_input
+Framework: tensorflow
+Category : placeholders_to_keras_input
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+x = tf.placeholder(tf.float32, shape=[None, 784])
+
+h1 = tf.layers.dense(x, 128, activation=tf.nn.relu)
+logits = tf.layers.dense(h1, 10)
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    dummy = sess.run(logits, feed_dict={x: [[0.0] * 784]})
+    print(dummy)
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(784,))
+h1 = tf.keras.layers.Dense(128, activation="relu")(inputs)
+logits = tf.keras.layers.Dense(10)(h1)
+
+model = tf.keras.Model(inputs=inputs, outputs=logits)
+
+dummy = model(tf.zeros((1, 784)))
+print(dummy.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+# Using tf.keras.Input as the input layer
+x = tf.keras.Input(shape=(784,))
+
+# Creating a Sequential model using tf.keras
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(128, activation='relu', input_shape=(784,)),
+    tf.keras.layers.Dense(10)
+])
+
+# Getting the output of the model
+logits = model(x)
+
+# Use the functional API to create a model
+model = tf.keras.Model(inputs=x, outputs=logits)
+
+# Compiling the model, which may be a necessary step for training (not needed for inference)
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
+
+# Initializing the model weights
+model.build((None, 784))
+
+# Running the inference
+dummy = model(tf.constant([[0.0] * 784], dtype=tf.float32))
+print(dummy.numpy())
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+# Using tf.keras.Input as the input layer
+x = tf.keras.Input(shape=(784,))
+
+# Creating a Sequential model using tf.keras
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(128, activation='relu', input_shape=(784,)),
+    tf.keras.layers.Dense(10)
+])
+
+# Getting the output of the model
+logits = model(x)
+
+# Use the functional API to create a model
+model = tf.keras.Model(inputs=x, outputs=logits)
+
+# Compiling the model, which may be a necessary step for training (not needed for inference)
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
+
+# Initializing the model weights
+model.build((None, 784))
+
+# Running the inference
+dummy = model(tf.constant([[0.0] * 784], dtype=tf.float32))
+print(dummy.numpy())
+```
+
+====================================================================================================
+ID       : sample_04_global_variables_initializer
+Framework: tensorflow
+Category : init
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+w = tf.get_variable("w", shape=[3, 3],
+                    initializer=tf.random_normal_initializer())
+b = tf.get_variable("b", shape=[3],
+                    initializer=tf.zeros_initializer())
+
+z = tf.matmul(tf.ones([1, 3]), w) + b
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    print(sess.run(z))
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+dense = tf.keras.layers.Dense(3)
+
+z = dense(tf.ones((1, 3)))
+print(z.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+w = tf.Variable(tf.random.normal(shape=[3, 3]), name="w")
+b = tf.Variable(tf.zeros(shape=[3]), name="b")
+
+z = tf.matmul(tf.ones([1, 3]), w) + b
+
+# Initialize variables
+tf.compat.v1.global_variables_initializer().run()
+
+print(z.numpy())  # Eager execution, get numpy array directly
+```
+
+RAW RESPONSE
+------------
+Here's the upgraded code that maintains compatibility with the latest stable version of TensorFlow, adhering to your specified rules:
+
+```python
+import tensorflow as tf
+
+w = tf.Variable(tf.random.normal(shape=[3, 3]), name="w")
+b = tf.Variable(tf.zeros(shape=[3]), name="b")
+
+z = tf.matmul(tf.ones([1, 3]), w) + b
+
+# Initialize variables
+tf.compat.v1.global_variables_initializer().run()
+
+print(z.numpy())  # Eager execution, get numpy array directly
+```
+
+This version uses `tf.Variable` to replace `tf.get_variable`, and it directly accesses the value of `z` using `.numpy()` for printing. The global variables are initialized in an eager execution context without the need for creating a session.
+
+====================================================================================================
+ID       : sample_05_get_variable_scope
+Framework: tensorflow
+Category : variable_scope_to_layers
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+with tf.variable_scope("shared", reuse=None):
+    w = tf.get_variable("w", shape=[5, 5])
+    y1 = tf.matmul(tf.ones([1, 5]), w)
+
+with tf.variable_scope("shared", reuse=True):
+    w2 = tf.get_variable("w", shape=[5, 5])
+    y2 = tf.matmul(tf.ones([1, 5]), w2)
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    print(sess.run([y1, y2]))
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+dense = tf.keras.layers.Dense(5, use_bias=False)
+
+y1 = dense(tf.ones((1, 5)))
+y2 = dense(tf.ones((1, 5)))
+
+print(y1.numpy(), y2.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+# Create a shared variable in a variable scope
+w = tf.Variable(tf.random.normal([5, 5]), name="w", trainable=True)
+
+# Use the same variable by accessing it directly
+y1 = tf.matmul(tf.ones([1, 5]), w)
+y2 = tf.matmul(tf.ones([1, 5]), w)
+
+# Eager execution is enabled by default in TensorFlow 2
+tf.compat.v1.global_variables_initializer().run()  # Initialize variables
+
+# Print the results for y1 and y2
+print([y1.numpy(), y2.numpy()])
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+# Create a shared variable in a variable scope
+w = tf.Variable(tf.random.normal([5, 5]), name="w", trainable=True)
+
+# Use the same variable by accessing it directly
+y1 = tf.matmul(tf.ones([1, 5]), w)
+y2 = tf.matmul(tf.ones([1, 5]), w)
+
+# Eager execution is enabled by default in TensorFlow 2
+tf.compat.v1.global_variables_initializer().run()  # Initialize variables
+
+# Print the results for y1 and y2
+print([y1.numpy(), y2.numpy()])
+```
+
+====================================================================================================
+ID       : sample_06_tf_layers_dense
+Framework: tensorflow
+Category : tf_layers_to_tf_keras
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+inputs = tf.placeholder(tf.float32, shape=[None, 16])
+hidden = tf.layers.dense(inputs, 32, activation=tf.nn.relu)
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    out = sess.run(hidden, feed_dict={inputs: [[0.0]*16]})
+    print(out)
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(16,))
+hidden = tf.keras.layers.Dense(32, activation="relu")(inputs)
+
+model = tf.keras.Model(inputs=inputs, outputs=hidden)
+out = model(tf.zeros((1, 16)))
+print(out.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(16,))
+hidden = tf.keras.layers.Dense(32, activation=tf.nn.relu)(inputs)
+
+model = tf.keras.Model(inputs=inputs, outputs=hidden)
+
+model.build()  # Build the model to create the trainable variables
+model.compile(optimizer='adam')  # Compile to make sure it's ready for inference
+
+out = model.predict([[0.0]*16])
+print(out)
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(16,))
+hidden = tf.keras.layers.Dense(32, activation=tf.nn.relu)(inputs)
+
+model = tf.keras.Model(inputs=inputs, outputs=hidden)
+
+model.build()  # Build the model to create the trainable variables
+model.compile(optimizer='adam')  # Compile to make sure it's ready for inference
+
+out = model.predict([[0.0]*16])
+print(out)
+```
+
+====================================================================================================
+ID       : sample_07_optimizer_minimize
+Framework: tensorflow
+Category : optimizer_to_gradient_tape
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+x = tf.placeholder(tf.float32, shape=[None, 1])
+y_true = tf.placeholder(tf.float32, shape=[None, 1])
+
+w = tf.get_variable("w", shape=[1, 1],
+                    initializer=tf.random_normal_initializer())
+y_pred = tf.matmul(x, w)
+loss = tf.reduce_mean(tf.square(y_pred - y_true))
+
+optimizer = tf.train.GradientDescentOptimizer(0.1)
+train_op = optimizer.minimize(loss)
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    for step in range(10):
+        _, l = sess.run(
+            [train_op, loss],
+            feed_dict={x: [[1.0]], y_true: [[2.0]]}
+        )
+        print(step, l)
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+w = tf.Variable(tf.random.normal([1, 1]))
+optimizer = tf.keras.optimizers.SGD(0.1)
+
+for step in range(10):
+    with tf.GradientTape() as tape:
+        x = tf.constant([[1.0]])
+        y_true = tf.constant([[2.0]])
+        y_pred = tf.matmul(x, w)
+        loss = tf.reduce_mean(tf.square(y_pred - y_true))
+
+    grads = tape.gradient(loss, [w])
+    optimizer.apply_gradients(zip(grads, [w]))
+    print(step, loss.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+# Define input using tf.keras.Input
+x = tf.keras.Input(shape=(1,), dtype=tf.float32)
+y_true = tf.keras.Input(shape=(1,), dtype=tf.float32)
+
+# Define weights using tf.Variable
+w = tf.Variable(tf.random.normal(shape=(1, 1)), name="w")
+y_pred = tf.matmul(x, w)  # Use tf.matmul for the model's output
+
+# Define the loss function
+loss = tf.reduce_mean(tf.square(y_pred - y_true))
+
+# Create the optimizer 
+optimizer = tf.keras.optimizers.SGD(learning_rate=0.1)
+
+# Create a training step function
+@tf.function
+def train_step(x_input, y_input):
+    with tf.GradientTape() as tape:
+        current_loss = tf.reduce_mean(tf.square(tf.matmul(x_input, w) - y_input))
+    gradients = tape.gradient(current_loss, [w])
+    optimizer.apply_gradients(zip(gradients, [w]))
+    return current_loss
+
+# Run the training loop
+for step in range(10):
+    loss_value = train_step(tf.constant([[1.0]]), tf.constant([[2.0]]))
+    print(step, loss_value.numpy())
+```
+
+RAW RESPONSE
+------------
+Here's the upgraded code that adheres to the rules you've provided. The code has been updated to use the `tf.keras` API, which is the modern way to define models and perform training in TensorFlow:
+
+```python
+import tensorflow as tf
+
+# Define input using tf.keras.Input
+x = tf.keras.Input(shape=(1,), dtype=tf.float32)
+y_true = tf.keras.Input(shape=(1,), dtype=tf.float32)
+
+# Define weights using tf.Variable
+w = tf.Variable(tf.random.normal(shape=(1, 1)), name="w")
+y_pred = tf.matmul(x, w)  # Use tf.matmul for the model's output
+
+# Define the loss function
+loss = tf.reduce_mean(tf.square(y_pred - y_true))
+
+# Create the optimizer 
+optimizer = tf.keras.optimizers.SGD(learning_rate=0.1)
+
+# Create a training step function
+@tf.function
+def train_step(x_input, y_input):
+    with tf.GradientTape() as tape:
+        current_loss = tf.reduce_mean(tf.square(tf.matmul(x_input, w) - y_input))
+    gradients = tape.gradient(current_loss, [w])
+    optimizer.apply_gradients(zip(gradients, [w]))
+    return current_loss
+
+# Run the training loop
+for step in range(10):
+    loss_value = train_step(tf.constant([[1.0]]), tf.constant([[2.0]]))
+    print(step, loss_value.numpy())
+```
+
+### Key Changes Made:
+- Replaced `tf.placeholder` with `tf.keras.Input` as inputs to model.
+- Changed `tf.get_variable` to `tf.Variable`.
+- Used `tf.keras.optimizers.SGD` instead of `tf.train.GradientDescentOptimizer`.
+- The training operation is performed in a `tf.function` using `tf.GradientTape` for automatic differentiation.
+- The `sess.run` call is replaced with direct calls to `train_step` with Eager Tensors. 
+- The loss value is printed using `.numpy()` to convert the tensor to a NumPy value before printing. 
+
+This keeps the overall structure and functionality of the original code intact while ensuring compatibility with the latest version of TensorFlow.
+
+====================================================================================================
+ID       : sample_08_model_fit
+Framework: tensorflow
+Category : training_loop_to_model_fit
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+import numpy as np
+
+x = tf.placeholder(tf.float32, [None, 1])
+y = tf.placeholder(tf.float32, [None, 1])
+
+w = tf.get_variable("w", shape=[1, 1])
+pred = tf.matmul(x, w)
+loss = tf.losses.mean_squared_error(y, pred)
+
+train_op = tf.train.AdamOptimizer(0.01).minimize(loss)
+
+X_data = np.random.randn(100, 1)
+Y_data = 3 * X_data
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    for step in range(100):
+        _, l = sess.run(
+            [train_op, loss],
+            feed_dict={x: X_data, y: Y_data}
+        )
+    print("Final loss:", l)
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+import numpy as np
+
+X_data = np.random.randn(100, 1).astype("float32")
+Y_data = 3 * X_data
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(1, use_bias=False, input_shape=(1,))
+])
+
+model.compile(optimizer=tf.keras.optimizers.Adam(0.01),
+              loss="mse")
+
+model.fit(X_data, Y_data, epochs=100, verbose=0)
+print("Final loss:", model.evaluate(X_data, Y_data, verbose=0))
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+import numpy as np
+
+# Define inputs using tf.keras.Input
+x = tf.keras.Input(shape=(1,))
+y = tf.keras.Input(shape=(1,))
+
+# Define a trainable weight variable
+w = tf.Variable(tf.random.normal([1, 1]), name="w")
+# Define the model operations
+pred = tf.matmul(x, w)
+loss = tf.reduce_mean(tf.keras.losses.mean_squared_error(y, pred))
+
+# Create an optimizer
+optimizer = tf.keras.optimizers.Adam(0.01)
+
+# Define the training operation in a GradientTape context
+@tf.function
+def train_step(X_batch, Y_batch):
+    with tf.GradientTape() as tape:
+        predictions = tf.matmul(X_batch, w)
+        current_loss = tf.reduce_mean(tf.keras.losses.mean_squared_error(Y_batch, predictions))
+    gradients = tape.gradient(current_loss, [w])
+    optimizer.apply_gradients(zip(gradients, [w]))
+    return current_loss
+
+# Generate synthetic data
+X_data = np.random.randn(100, 1)
+Y_data = 3 * X_data
+
+# Training loop
+for step in range(100):
+    l = train_step(tf.convert_to_tensor(X_data, dtype=tf.float32), tf.convert_to_tensor(Y_data, dtype=tf.float32))
+    print(f"Step {step + 1}, Loss: {l.numpy()}")
+
+print("Final loss:", l.numpy())
+```
+
+RAW RESPONSE
+------------
+Here is the upgraded code that is fully compatible with the latest versions of TensorFlow, preserving all functionality and logic while making only the necessary migrations.
+
+```python
+import tensorflow as tf
+import numpy as np
+
+# Define inputs using tf.keras.Input
+x = tf.keras.Input(shape=(1,))
+y = tf.keras.Input(shape=(1,))
+
+# Define a trainable weight variable
+w = tf.Variable(tf.random.normal([1, 1]), name="w")
+# Define the model operations
+pred = tf.matmul(x, w)
+loss = tf.reduce_mean(tf.keras.losses.mean_squared_error(y, pred))
+
+# Create an optimizer
+optimizer = tf.keras.optimizers.Adam(0.01)
+
+# Define the training operation in a GradientTape context
+@tf.function
+def train_step(X_batch, Y_batch):
+    with tf.GradientTape() as tape:
+        predictions = tf.matmul(X_batch, w)
+        current_loss = tf.reduce_mean(tf.keras.losses.mean_squared_error(Y_batch, predictions))
+    gradients = tape.gradient(current_loss, [w])
+    optimizer.apply_gradients(zip(gradients, [w]))
+    return current_loss
+
+# Generate synthetic data
+X_data = np.random.randn(100, 1)
+Y_data = 3 * X_data
+
+# Training loop
+for step in range(100):
+    l = train_step(tf.convert_to_tensor(X_data, dtype=tf.float32), tf.convert_to_tensor(Y_data, dtype=tf.float32))
+    print(f"Step {step + 1}, Loss: {l.numpy()}")
+
+print("Final loss:", l.numpy())
+``` 
+
+In this upgraded code:
+- The `tf.placeholder` has been removed, and `tf.keras.Input` is used instead, allowing for eager execution.
+- The `tf.get_variable` is replaced with a `tf.Variable`.
+- The training loop is structured using a `tf.GradientTape` for computing gradients in an eager context.
+- Loss computation is now directly using the Keras loss function and computed within the training step.
+- The overall functionality remains unchanged with regards to the original training logic.
+
+====================================================================================================
+ID       : sample_09_tf_data_iterator
+Framework: tensorflow
+Category : tf_data_api
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+dataset = tf.data.Dataset.range(5)
+iterator = dataset.make_one_shot_iterator()
+next_elem = iterator.get_next()
+
+with tf.Session() as sess:
+    try:
+        while True:
+            v = sess.run(next_elem)
+            print(v)
+    except tf.errors.OutOfRangeError:
+        pass
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+dataset = tf.data.Dataset.range(5)
+
+for v in dataset:
+    print(v.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+dataset = tf.data.Dataset.range(5)
+next_elem = iter(dataset)
+
+try:
+    while True:
+        v = next(next_elem)
+        print(v.numpy())
+except StopIteration:
+    pass
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+dataset = tf.data.Dataset.range(5)
+next_elem = iter(dataset)
+
+try:
+    while True:
+        v = next(next_elem)
+        print(v.numpy())
+except StopIteration:
+    pass
+```
+
+====================================================================================================
+ID       : sample_10_tf_while_loop
+Framework: tensorflow
+Category : control_flow
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+i = tf.constant(0)
+c = lambda i: tf.less(i, 5)
+b = lambda i: tf.add(i, 1)
+
+result = tf.while_loop(c, b, [i])
+
+with tf.Session() as sess:
+    print(sess.run(result))
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+i = 0
+while i < 5:
+    i += 1
+
+print(i)
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+i = tf.constant(0)
+c = lambda i: tf.less(i, 5)
+b = lambda i: tf.add(i, 1)
+
+result = tf.while_loop(c, b, [i])
+
+# In TensorFlow 2.x, we don't use sessions anymore. We can directly evaluate the result.
+print(result.numpy())
+```
+
+RAW RESPONSE
+------------
+Here's the upgraded code that adheres to your requirements using the latest stable version of TensorFlow:
+
+```python
+import tensorflow as tf
+
+i = tf.constant(0)
+c = lambda i: tf.less(i, 5)
+b = lambda i: tf.add(i, 1)
+
+result = tf.while_loop(c, b, [i])
+
+# In TensorFlow 2.x, we don't use sessions anymore. We can directly evaluate the result.
+print(result.numpy())
+```
+
+====================================================================================================
+ID       : sample_11_tf_cond
+Framework: tensorflow
+Category : control_flow
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+x = tf.placeholder(tf.float32)
+
+y = tf.cond(x > 0.0,
+            lambda: x * 2.0,
+            lambda: -x)
+
+with tf.Session() as sess:
+    print(sess.run(y, feed_dict={x: 3.0}))
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+x = tf.constant(3.0)
+
+y = tf.cond(x > 0.0,
+            lambda: x * 2.0,
+            lambda: -x)
+
+print(y.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+x = tf.constant(3.0, dtype=tf.float32)  # Replace placeholder with a constant tensor
+
+y = tf.cond(x > 0.0,
+            lambda: x * 2.0,
+            lambda: -x)
+
+# Directly evaluating y since we are in eager execution mode
+print(y.numpy())
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+x = tf.constant(3.0, dtype=tf.float32)  # Replace placeholder with a constant tensor
+
+y = tf.cond(x > 0.0,
+            lambda: x * 2.0,
+            lambda: -x)
+
+# Directly evaluating y since we are in eager execution mode
+print(y.numpy())
+```
+
+====================================================================================================
+ID       : sample_12_saved_model_export
+Framework: tensorflow
+Category : saving_models
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+import os
+
+x = tf.placeholder(tf.float32, shape=[None, 4], name="x")
+w = tf.get_variable("w", shape=[4, 1])
+y = tf.matmul(x, w, name="y")
+
+builder = tf.saved_model.builder.SavedModelBuilder("export_dir")
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+
+    inputs = {"x": tf.saved_model.utils.build_tensor_info(x)}
+    outputs = {"y": tf.saved_model.utils.build_tensor_info(y)}
+
+    signature = tf.saved_model.signature_def_utils.build_signature_def(
+        inputs=inputs,
+        outputs=outputs,
+        method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME,
+    )
+
+    builder.add_meta_graph_and_variables(
+        sess,
+        [tf.saved_model.tag_constants.SERVING],
+        signature_def_map={
+            tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY: signature
+        }
+    )
+
+    builder.save()
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(4,), name="x")
+outputs = tf.keras.layers.Dense(1, use_bias=True, name="dense")(inputs)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+model.save("export_dir")
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+import os
+
+# Replace tf.placeholder with tf.keras.Input
+x = tf.keras.Input(shape=(4,), dtype=tf.float32, name="x")
+w = tf.Variable(tf.random.normal(shape=[4, 1]), name="w")  # Use tf.Variable for weights
+y = tf.matmul(x, w, name="y")
+
+# Use the tf.saved_model.save instead of SavedModelBuilder
+model = tf.keras.Model(inputs=x, outputs=y)  # Create a Keras model
+
+# Compile the model if necessary (not shown in the original code)
+# model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Saving the model
+tf.saved_model.save(model, "export_dir")  # Save the model directly
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+import os
+
+# Replace tf.placeholder with tf.keras.Input
+x = tf.keras.Input(shape=(4,), dtype=tf.float32, name="x")
+w = tf.Variable(tf.random.normal(shape=[4, 1]), name="w")  # Use tf.Variable for weights
+y = tf.matmul(x, w, name="y")
+
+# Use the tf.saved_model.save instead of SavedModelBuilder
+model = tf.keras.Model(inputs=x, outputs=y)  # Create a Keras model
+
+# Compile the model if necessary (not shown in the original code)
+# model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Saving the model
+tf.saved_model.save(model, "export_dir")  # Save the model directly
+```
+
+====================================================================================================
+ID       : sample_13_summary_writer
+Framework: tensorflow
+Category : summaries
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+step = tf.placeholder(tf.int64)
+value = tf.placeholder(tf.float32)
+
+summary = tf.summary.scalar("my_scalar", value)
+writer = tf.summary.FileWriter("logs")
+
+with tf.Session() as sess:
+    for i in range(5):
+        s = sess.run(summary, feed_dict={step: i, value: float(i)})
+        writer.add_summary(s, global_step=i)
+
+writer.close()
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+writer = tf.summary.create_file_writer("logs")
+
+with writer.as_default():
+    for i in range(5):
+        tf.summary.scalar("my_scalar", float(i), step=i)
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+step = tf.constant(0, dtype=tf.int64)
+value = tf.constant(0.0, dtype=tf.float32)
+
+summary_writer = tf.summary.create_file_writer("logs")
+
+for i in range(5):
+    step = tf.constant(i, dtype=tf.int64)
+    value = tf.constant(float(i), dtype=tf.float32)
+
+    with summary_writer.as_default():
+        tf.summary.scalar("my_scalar", value, step=step)
+
+summary_writer.close()
+```
+
+RAW RESPONSE
+------------
+Here’s the upgraded Python code that is fully compatible with the latest stable version of TensorFlow. The use of `tf.placeholder` has been replaced with eager tensor operations, and the code now uses `tf.summary.create_file_writer` for writing logs instead of `tf.summary.FileWriter`.
+
+```python
+import tensorflow as tf
+
+step = tf.constant(0, dtype=tf.int64)
+value = tf.constant(0.0, dtype=tf.float32)
+
+summary_writer = tf.summary.create_file_writer("logs")
+
+for i in range(5):
+    step = tf.constant(i, dtype=tf.int64)
+    value = tf.constant(float(i), dtype=tf.float32)
+    
+    with summary_writer.as_default():
+        tf.summary.scalar("my_scalar", value, step=step)
+
+summary_writer.close()
+``` 
+
+This code maintains the original functionality while ensuring compatibility with the latest TensorFlow APIs.
+
+====================================================================================================
+ID       : sample_14_rnn_dynamic_rnn
+Framework: tensorflow
+Category : rnns
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+inputs = tf.placeholder(tf.float32, [None, 10, 8])  # (batch, time, features)
+cell = tf.nn.rnn_cell.LSTMCell(16)
+outputs, state = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    out_val = sess.run(outputs,
+                       feed_dict={inputs: tf.zeros([2, 10, 8]).eval()})
+    print(out_val.shape)
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(10, 8))
+outputs = tf.keras.layers.LSTM(16, return_sequences=True)(inputs)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+out_val = model(tf.zeros([2, 10, 8]))
+print(out_val.shape)
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(10, 8), dtype=tf.float32)  # (batch, time, features)
+cell = tf.keras.layers.LSTM(16, return_sequences=True, return_state=True)
+outputs, state = cell(inputs)
+
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+# Prepare input data
+input_data = tf.zeros([2, 10, 8])
+
+# Model will be used in eager execution mode
+out_val = model(input_data)
+print(out_val.shape)
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(10, 8), dtype=tf.float32)  # (batch, time, features)
+cell = tf.keras.layers.LSTM(16, return_sequences=True, return_state=True)
+outputs, state = cell(inputs)
+
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+# Prepare input data
+input_data = tf.zeros([2, 10, 8])
+
+# Model will be used in eager execution mode
+out_val = model(input_data)
+print(out_val.shape)
+```
+
+====================================================================================================
+ID       : sample_15_estimator
+Framework: tensorflow
+Category : estimator_to_keras
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+feature_columns = [tf.feature_column.numeric_column("x", shape=[1])]
+
+estimator = tf.estimator.DNNClassifier(
+    feature_columns=feature_columns,
+    hidden_units=[10],
+    n_classes=2
+)
+
+def input_fn():
+    return {"x": [0.0, 1.0]}, [0, 1]
+
+estimator.train(input_fn=input_fn, steps=10)
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+import numpy as np
+
+x = np.array([[0.0], [1.0]], dtype="float32")
+y = np.array([0, 1], dtype="int32")
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(10, activation="relu", input_shape=(1,)),
+    tf.keras.layers.Dense(2, activation="softmax")
+])
+
+model.compile(
+    optimizer="adam",
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"]
+)
+
+model.fit(x, y, epochs=10, verbose=0)
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+feature_columns = [tf.feature_column.numeric_column("x", shape=[1])]
+
+# Use the Keras API to create a model instead of tf.estimator
+model = tf.keras.Sequential([
+    tf.keras.layers.DenseFeatures(feature_columns),
+    tf.keras.layers.Dense(10, activation='relu'),
+    tf.keras.layers.Dense(2, activation='softmax')
+])
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+def input_fn():
+    # Return a dataset for training
+    return tf.data.Dataset.from_tensor_slices(({"x": [0.0, 1.0]}, [0, 1])).batch(1)
+
+# Train the model using the dataset created from the input function
+model.fit(input_fn(), steps=10)
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+feature_columns = [tf.feature_column.numeric_column("x", shape=[1])]
+
+# Use the Keras API to create a model instead of tf.estimator
+model = tf.keras.Sequential([
+    tf.keras.layers.DenseFeatures(feature_columns),
+    tf.keras.layers.Dense(10, activation='relu'),
+    tf.keras.layers.Dense(2, activation='softmax')
+])
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+def input_fn():
+    # Return a dataset for training
+    return tf.data.Dataset.from_tensor_slices(({"x": [0.0, 1.0]}, [0, 1])).batch(1)
+
+# Train the model using the dataset created from the input function
+model.fit(input_fn(), steps=10)
+```
+
+====================================================================================================
+ID       : sample_16_contrib_layers
+Framework: tensorflow
+Category : contrib_removal
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+x = tf.placeholder(tf.float32, shape=[None, 4])
+
+h = tf.contrib.layers.fully_connected(x, 16, activation_fn=tf.nn.relu)
+logits = tf.contrib.layers.fully_connected(h, 3, activation_fn=None)
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    print(sess.run(logits, feed_dict={x: [[0.0, 0.0, 0.0, 0.0]]}))
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(4,))
+h = tf.keras.layers.Dense(16, activation="relu")(inputs)
+logits = tf.keras.layers.Dense(3)(h)
+
+model = tf.keras.Model(inputs=inputs, outputs=logits)
+print(model(tf.zeros((1, 4))).numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+# Define the input layer using tf.keras.Input
+x = tf.keras.Input(shape=(4,), dtype=tf.float32)
+
+# Use tf.keras.layers.Dense instead of tf.contrib.layers.fully_connected
+h = tf.keras.layers.Dense(16, activation=tf.nn.relu)(x)
+logits = tf.keras.layers.Dense(3, activation=None)(h)
+
+# Create a Keras model
+model = tf.keras.Model(inputs=x, outputs=logits)
+
+# Compile the model (optional, no loss is defined here, but necessary to prepare for training)
+model.compile(optimizer='adam', loss='mean_squared_error')  # Dummy loss function for compatibility
+
+# Initialize the model's weights (this is typically done during model.fit)
+model.build(input_shape=(None, 4))
+
+# Use model.predict instead of session.run
+predictions = model.predict([[0.0, 0.0, 0.0, 0.0]])
+print(predictions)
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+# Define the input layer using tf.keras.Input
+x = tf.keras.Input(shape=(4,), dtype=tf.float32)
+
+# Use tf.keras.layers.Dense instead of tf.contrib.layers.fully_connected
+h = tf.keras.layers.Dense(16, activation=tf.nn.relu)(x)
+logits = tf.keras.layers.Dense(3, activation=None)(h)
+
+# Create a Keras model
+model = tf.keras.Model(inputs=x, outputs=logits)
+
+# Compile the model (optional, no loss is defined here, but necessary to prepare for training)
+model.compile(optimizer='adam', loss='mean_squared_error')  # Dummy loss function for compatibility
+
+# Initialize the model's weights (this is typically done during model.fit)
+model.build(input_shape=(None, 4))
+
+# Use model.predict instead of session.run
+predictions = model.predict([[0.0, 0.0, 0.0, 0.0]])
+print(predictions)
+```
+
+====================================================================================================
+ID       : sample_17_tfrecord_input
+Framework: tensorflow
+Category : tfrecords
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+filenames = ["data.tfrecord"]
+
+dataset = tf.data.TFRecordDataset(filenames)
+
+def parse_fn(example_proto):
+    features = {
+        "x": tf.FixedLenFeature([1], tf.float32),
+    }
+    parsed = tf.parse_single_example(example_proto, features)
+    return parsed["x"]
+
+dataset = dataset.map(parse_fn)
+iterator = dataset.make_one_shot_iterator()
+next_elem = iterator.get_next()
+
+with tf.Session() as sess:
+    try:
+        while True:
+            print(sess.run(next_elem))
+    except tf.errors.OutOfRangeError:
+        pass
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+filenames = ["data.tfrecord"]
+dataset = tf.data.TFRecordDataset(filenames)
+
+feature_description = {
+    "x": tf.io.FixedLenFeature([1], tf.float32),
+}
+
+def parse_fn(example_proto):
+    parsed = tf.io.parse_single_example(example_proto, feature_description)
+    return parsed["x"]
+
+dataset = dataset.map(parse_fn)
+
+for elem in dataset:
+    print(elem.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+filenames = ["data.tfrecord"]
+
+dataset = tf.data.TFRecordDataset(filenames)
+
+def parse_fn(example_proto):
+    features = {
+        "x": tf.io.FixedLenFeature([1], tf.float32),
+    }
+    parsed = tf.io.parse_single_example(example_proto, features)
+    return parsed["x"]
+
+dataset = dataset.map(parse_fn)
+
+# Using a for loop to iterate over dataset in eager execution
+for next_elem in dataset:
+    print(next_elem.numpy())
+```
+
+RAW RESPONSE
+------------
+Here is the upgraded code that complies with the latest stable version of TensorFlow, ensuring it maintains all functionality and logic exactly as before:
+
+```python
+import tensorflow as tf
+
+filenames = ["data.tfrecord"]
+
+dataset = tf.data.TFRecordDataset(filenames)
+
+def parse_fn(example_proto):
+    features = {
+        "x": tf.io.FixedLenFeature([1], tf.float32),
+    }
+    parsed = tf.io.parse_single_example(example_proto, features)
+    return parsed["x"]
+
+dataset = dataset.map(parse_fn)
+
+# Using a for loop to iterate over dataset in eager execution
+for next_elem in dataset:
+    print(next_elem.numpy())
+```
+
+### Changes made:
+1. Updated `tf.FixedLenFeature` to `tf.io.FixedLenFeature` and `tf.parse_single_example` to `tf.io.parse_single_example` to reflect the moved functions in the latest TensorFlow versions.
+2. Replaced the iterator pattern with a simple `for` loop that directly iterates over the dataset, which is more in line with eager execution and the current TensorFlow practices.
+
+====================================================================================================
+ID       : sample_18_distribution
+Framework: tensorflow
+Category : distribution_strategy
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+with tf.device("/gpu:0"):
+    x = tf.constant([1.0, 2.0, 3.0])
+
+with tf.Session() as sess:
+    print(sess.run(x))
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+strategy = tf.distribute.MirroredStrategy()
+
+with strategy.scope():
+    x = tf.constant([1.0, 2.0, 3.0])
+
+print(x.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+with tf.device("/gpu:0"):
+    x = tf.constant([1.0, 2.0, 3.0])
+
+# In TensorFlow 2.x, eager execution is enabled by default, so we can directly print the tensor.
+print(x)
+```
+
+RAW RESPONSE
+------------
+Here is the upgraded code that is fully compatible with the latest stable version of TensorFlow, adhering to the specified rules.
+
+```python
+import tensorflow as tf
+
+with tf.device("/gpu:0"):
+    x = tf.constant([1.0, 2.0, 3.0])
+
+# In TensorFlow 2.x, eager execution is enabled by default, so we can directly print the tensor.
+print(x)
+```
+
+====================================================================================================
+ID       : sample_19_tf_function
+Framework: tensorflow
+Category : tf_function
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+x = tf.placeholder(tf.float32)
+y = x * x
+
+with tf.Session() as sess:
+    print(sess.run(y, feed_dict={x: 3.0}))
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+@tf.function
+def square(x):
+    return x * x
+
+print(square(tf.constant(3.0)).numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+# Define a function to compute the square of the input
+@tf.function
+def compute_square(x):
+    return x * x
+
+# Create a tensor directly instead of a placeholder
+x = tf.constant(3.0)
+
+# Call the function to compute the square
+result = compute_square(x)
+
+# Print the result
+print(result.numpy())
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+# Define a function to compute the square of the input
+@tf.function
+def compute_square(x):
+    return x * x
+
+# Create a tensor directly instead of a placeholder
+x = tf.constant(3.0)
+
+# Call the function to compute the square
+result = compute_square(x)
+
+# Print the result
+print(result.numpy())
+```
+
+====================================================================================================
+ID       : sample_20_image_preprocessing
+Framework: tensorflow
+Category : image_ops
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+file_contents = tf.read_file("image.jpg")
+image = tf.image.decode_jpeg(file_contents)
+resized = tf.image.resize_images(image, [224, 224])
+
+with tf.Session() as sess:
+    out = sess.run(resized)
+    print(out.shape)
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+file_contents = tf.io.read_file("image.jpg")
+image = tf.io.decode_jpeg(file_contents)
+resized = tf.image.resize(image, [224, 224])
+print(resized.shape)
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+file_contents = tf.io.read_file("image.jpg")
+image = tf.image.decode_jpeg(file_contents)
+resized = tf.image.resize(image, [224, 224])
+
+# Eager execution is enabled by default in TensorFlow 2.x
+out = resized.numpy()  # Convert the tensor to a NumPy array
+print(out.shape)
+```
+
+RAW RESPONSE
+------------
+Here's the upgraded code fully compatible with the latest stable version of TensorFlow, following all specified rules:
+
+```python
+import tensorflow as tf
+
+file_contents = tf.io.read_file("image.jpg")
+image = tf.image.decode_jpeg(file_contents)
+resized = tf.image.resize(image, [224, 224])
+
+# Eager execution is enabled by default in TensorFlow 2.x
+out = resized.numpy()  # Convert the tensor to a NumPy array
+print(out.shape)
+``` 
+
+### Changes made:
+1. Updated `tf.read_file` to `tf.io.read_file` for compatibility.
+2. Updated `tf.image.resize_images` to `tf.image.resize` since `resize_images` is deprecated.
+3. Removed the `tf.Session` context since eager execution is enabled by default, and converted the tensor to a NumPy array using `.numpy()`.
+
+====================================================================================================
+ID       : sample_22_custom_layer
+Framework: tensorflow
+Category : subclassing
+====================================================================================================
+
+INPUT (TF1)
+-----------
+```python
+import tensorflow as tf
+
+class MyLayer(tf.layers.Layer):
+    def __init__(self, units=32):
+        super(MyLayer, self).__init__()
+        self.units = units
+
+    def build(self, input_shape):
+        self.w = self.add_variable(
+            name="w",
+            shape=[int(input_shape[-1]), self.units]
+        )
+        self.b = self.add_variable(
+            name="b",
+            shape=[self.units],
+            initializer=tf.zeros_initializer()
+        )
+
+    def call(self, inputs):
+        return tf.matmul(inputs, self.w) + self.b
+
+x = tf.placeholder(tf.float32, [None, 4])
+layer = MyLayer(3)
+y = layer(x)
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    print(sess.run(y, feed_dict={x: [[1.0, 2.0, 3.0, 4.0]]}))
+```
+
+EXPECTED (TF2)
+--------------
+```python
+import tensorflow as tf
+
+class MyLayer(tf.keras.layers.Layer):
+    def __init__(self, units=32):
+        super().__init__()
+        self.units = units
+
+    def build(self, input_shape):
+        self.w = self.add_weight(
+            shape=(input_shape[-1], self.units),
+            initializer="random_normal",
+            trainable=True,
+            name="w",
+        )
+        self.b = self.add_weight(
+            shape=(self.units,),
+            initializer="zeros",
+            trainable=True,
+            name="b",
+        )
+
+    def call(self, inputs):
+        return tf.matmul(inputs, self.w) + self.b
+
+layer = MyLayer(3)
+y = layer(tf.constant([[1.0, 2.0, 3.0, 4.0]]))
+print(y.numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import tensorflow as tf
+
+class MyLayer(tf.keras.layers.Layer):
+    def __init__(self, units=32):
+        super(MyLayer, self).__init__()
+        self.units = units
+
+    def build(self, input_shape):
+        self.w = self.add_weight(
+            name="w",
+            shape=[int(input_shape[-1]), self.units]
+        )
+        self.b = self.add_weight(
+            name="b",
+            shape=[self.units],
+            initializer=tf.zeros_initializer()
+        )
+
+    def call(self, inputs):
+        return tf.matmul(inputs, self.w) + self.b
+
+x = tf.keras.Input(shape=(4,))
+layer = MyLayer(3)
+y = layer(x)
+
+model = tf.keras.Model(inputs=x, outputs=y)
+
+model.build()  # Build the model to initialize weights
+model.compile(optimizer='adam', loss='mean_squared_error')  # Compile model with placeholder loss
+
+# To simulate running the model
+print(model(tf.convert_to_tensor([[1.0, 2.0, 3.0, 4.0]])))
+```
+
+RAW RESPONSE
+------------
+```python
+import tensorflow as tf
+
+class MyLayer(tf.keras.layers.Layer):
+    def __init__(self, units=32):
+        super(MyLayer, self).__init__()
+        self.units = units
+
+    def build(self, input_shape):
+        self.w = self.add_weight(
+            name="w",
+            shape=[int(input_shape[-1]), self.units]
+        )
+        self.b = self.add_weight(
+            name="b",
+            shape=[self.units],
+            initializer=tf.zeros_initializer()
+        )
+
+    def call(self, inputs):
+        return tf.matmul(inputs, self.w) + self.b
+
+x = tf.keras.Input(shape=(4,))
+layer = MyLayer(3)
+y = layer(x)
+
+model = tf.keras.Model(inputs=x, outputs=y)
+
+model.build()  # Build the model to initialize weights
+model.compile(optimizer='adam', loss='mean_squared_error')  # Compile model with placeholder loss
+
+# To simulate running the model
+print(model(tf.convert_to_tensor([[1.0, 2.0, 3.0, 4.0]])))
+```
+

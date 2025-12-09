@@ -8,9 +8,10 @@ INPUT (PyTorch legacy)
 -----------
 ```python
 import torch
+from torch.autograd import Variable
 
-inputs = torch.autograd.Variable(torch.ones(4, 3), requires_grad=True)
-weights = torch.autograd.Variable(torch.ones(3, 2))
+inputs = Variable(torch.ones(4, 3), requires_grad=True)
+weights = Variable(torch.ones(3, 2))
 outputs = torch.mm(inputs, weights)
 print(outputs.data)
 ```
@@ -31,10 +32,10 @@ LLM OUTPUT
 ```python
 import torch
 
-inputs = torch.ones(4, 3, requires_grad=True)  # Updated to directly create a tensor with requires_grad
-weights = torch.ones(3, 2)  # No need for Variable wrapper
+inputs = torch.ones(4, 3, requires_grad=True)
+weights = torch.ones(3, 2)
 outputs = torch.mm(inputs, weights)
-print(outputs.detach())  # Use detach() instead of .data to prevent tracking gradients
+print(outputs.detach())
 ```
 
 RAW RESPONSE
@@ -42,10 +43,10 @@ RAW RESPONSE
 ```python
 import torch
 
-inputs = torch.ones(4, 3, requires_grad=True)  # Updated to directly create a tensor with requires_grad
-weights = torch.ones(3, 2)  # No need for Variable wrapper
+inputs = torch.ones(4, 3, requires_grad=True)
+weights = torch.ones(3, 2)
 outputs = torch.mm(inputs, weights)
-print(outputs.detach())  # Use detach() instead of .data to prevent tracking gradients
+print(outputs.detach())
 ```
 
 ====================================================================================================
@@ -85,7 +86,10 @@ LLM OUTPUT
 import torch
 
 def allocate():
-    tensor = torch.cuda.FloatTensor(2, 3)
+    if torch.cuda.is_available():
+        tensor = torch.cuda.FloatTensor(2, 3)
+    else:
+        tensor = torch.FloatTensor(2, 3)  # Fallback if CUDA is not available
     tensor.zero_()
     return tensor
 
@@ -94,16 +98,25 @@ print(allocate())
 
 RAW RESPONSE
 ------------
+The provided code is already compatible with the latest stable version of PyTorch and doesn't require any changes. However, to ensure clarity and maintain best practices, I'll include a small modification to explicitly check for CUDA availability before allocating the tensor on the GPU.
+
+Here's the upgraded code:
+
 ```python
 import torch
 
 def allocate():
-    tensor = torch.cuda.FloatTensor(2, 3)
+    if torch.cuda.is_available():
+        tensor = torch.cuda.FloatTensor(2, 3)
+    else:
+        tensor = torch.FloatTensor(2, 3)  # Fallback if CUDA is not available
     tensor.zero_()
     return tensor
 
 print(allocate())
 ```
+
+This change makes the function robust by checking if CUDA is available and allocating a CPU tensor as a fallback. However, please note that if you strictly want to follow the original pattern without a fallback, your initial code was already up to date.
 
 ====================================================================================================
 ID       : pytorch_03_loss_item
@@ -115,9 +128,10 @@ INPUT (PyTorch legacy)
 -----------
 ```python
 import torch
+from torch.autograd import Variable
 
-x = torch.autograd.Variable(torch.randn(10, 5))
-w = torch.autograd.Variable(torch.randn(5, 1), requires_grad=True)
+x = Variable(torch.randn(10, 5))
+w = Variable(torch.randn(5, 1), requires_grad=True)
 y = torch.matmul(x, w)
 loss = y.sum()
 loss.backward()
@@ -142,12 +156,12 @@ LLM OUTPUT
 ```python
 import torch
 
-x = torch.randn(10, 5, requires_grad=True)  # Directly create a tensor with requires_grad
-w = torch.randn(5, 1, requires_grad=True)  # Directly create a tensor with requires_grad
+x = torch.randn(10, 5)  # No need to wrap it in Variable, now it's a tensor
+w = torch.randn(5, 1, requires_grad=True)
 y = torch.matmul(x, w)
 loss = y.sum()
 loss.backward()
-print(loss.item())  # Use item() to get the value as a standard Python number
+print(loss.item())  # Use .item() to get the scalar value of the loss
 ```
 
 RAW RESPONSE
@@ -155,11 +169,596 @@ RAW RESPONSE
 ```python
 import torch
 
-x = torch.randn(10, 5, requires_grad=True)  # Directly create a tensor with requires_grad
-w = torch.randn(5, 1, requires_grad=True)  # Directly create a tensor with requires_grad
+x = torch.randn(10, 5)  # No need to wrap it in Variable, now it's a tensor
+w = torch.randn(5, 1, requires_grad=True)
 y = torch.matmul(x, w)
 loss = y.sum()
 loss.backward()
-print(loss.item())  # Use item() to get the value as a standard Python number
+print(loss.item())  # Use .item() to get the scalar value of the loss
+```
+
+====================================================================================================
+ID       : pytorch_04_softmax_dim_and_data
+Framework: pytorch
+Category : nn_functional
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+import torch.nn.functional as F
+
+logits = torch.randn(3, 5)
+probs = F.softmax(logits)
+print(probs.data)
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+import torch.nn.functional as F
+
+logits = torch.randn(3, 5)
+probs = F.softmax(logits, dim=1)
+print(probs)
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+import torch.nn.functional as F
+
+logits = torch.randn(3, 5)
+probs = F.softmax(logits, dim=1)  # Specify the dimension for softmax
+print(probs.data)
+```
+
+RAW RESPONSE
+------------
+```python
+import torch
+import torch.nn.functional as F
+
+logits = torch.randn(3, 5)
+probs = F.softmax(logits, dim=1)  # Specify the dimension for softmax
+print(probs.data)
+```
+
+====================================================================================================
+ID       : pytorch_05_volatile_to_no_grad
+Framework: pytorch
+Category : inference
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+from torch.autograd import Variable
+import torch.nn as nn
+
+model = nn.Linear(4, 2)
+
+x = Variable(torch.randn(1, 4), volatile=True)
+output = model(x)
+print(output.data)
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(4, 2)
+
+with torch.no_grad():
+    x = torch.randn(1, 4)
+    output = model(x)
+print(output)
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(4, 2)
+
+# Use torch.no_grad() for inference to avoid tracking the gradients
+with torch.no_grad():
+    x = torch.randn(1, 4)
+    output = model(x)
+    print(output)
+```
+
+RAW RESPONSE
+------------
+Here’s the upgraded code to be fully compatible with the latest stable version(s) of PyTorch, taking into account the deprecated usage of `volatile` and how to handle tensor operations:
+
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(4, 2)
+
+# Use torch.no_grad() for inference to avoid tracking the gradients
+with torch.no_grad():
+    x = torch.randn(1, 4)
+    output = model(x)
+    print(output)
+```
+
+### Changes Made:
+- Removed `Variable` as it is no longer necessary to wrap tensors in `Variable`. Tensors now automatically support gradients.
+- Removed `volatile=True`. The `volatile` flag was used in earlier versions to disable gradient tracking for inference but has been replaced with `torch.no_grad()`, which is the recommended way to perform inference without tracking gradients.
+
+====================================================================================================
+ID       : pytorch_06_cuda_to_device
+Framework: pytorch
+Category : device_management
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(10, 3)
+model = model.cuda()
+
+inputs = torch.randn(4, 10)
+inputs = inputs.cuda()
+outputs = model(inputs)
+print(outputs.cpu().data.numpy())
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = nn.Linear(10, 3).to(device)
+inputs = torch.randn(4, 10, device=device)
+outputs = model(inputs)
+print(outputs.detach().cpu().numpy())
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(10, 3)
+model = model.to('cuda')  # Updated to use .to() method for device transfer
+
+inputs = torch.randn(4, 10).to('cuda')  # Updated to use .to() method for device transfer
+outputs = model(inputs)
+print(outputs.cpu().detach().numpy())  # Changed .data to .detach() for safe tensor extraction
+```
+
+RAW RESPONSE
+------------
+Here is the upgraded code that is fully compatible with the latest stable version of PyTorch:
+
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(10, 3)
+model = model.to('cuda')  # Updated to use .to() method for device transfer
+
+inputs = torch.randn(4, 10).to('cuda')  # Updated to use .to() method for device transfer
+outputs = model(inputs)
+print(outputs.cpu().detach().numpy())  # Changed .data to .detach() for safe tensor extraction
+``` 
+
+### Changes Made:
+1. Replaced `model.cuda()` with `model.to('cuda')` for a more standard device transfer approach.
+2. Replaced `inputs.cuda()` with `inputs.to('cuda')` for the same reason.
+3. Updated `outputs.cpu().data.numpy()` to `outputs.cpu().detach().numpy()` to avoid using the deprecated `.data` attribute, ensuring safe extraction of the tensor's data.
+
+====================================================================================================
+ID       : pytorch_07_upsample_to_interpolate
+Framework: pytorch
+Category : nn_functional
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+import torch.nn.functional as F
+
+x = torch.randn(1, 3, 16, 16)
+# Deprecated in modern PyTorch
+upsampled = F.upsample(x, scale_factor=2, mode="bilinear")
+print(upsampled.size())
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+import torch.nn.functional as F
+
+x = torch.randn(1, 3, 16, 16)
+# Recommended replacement
+upsampled = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
+print(upsampled.size())
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+import torch.nn.functional as F
+
+x = torch.randn(1, 3, 16, 16)
+# Updated to use F.interpolate instead of F.upsample
+upsampled = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
+print(upsampled.size())
+```
+
+RAW RESPONSE
+------------
+Here’s the upgraded code that uses the latest stable version of PyTorch and replaces the deprecated `F.upsample` method with `F.interpolate`. The functionality and logic of the original code are preserved:
+
+```python
+import torch
+import torch.nn.functional as F
+
+x = torch.randn(1, 3, 16, 16)
+# Updated to use F.interpolate instead of F.upsample
+upsampled = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
+print(upsampled.size())
+```
+
+====================================================================================================
+ID       : pytorch_08_nonzero_as_tuple
+Framework: pytorch
+Category : tensor_ops
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+
+x = torch.randn(5, 5)
+mask = x > 0
+idx = mask.nonzero()
+print(idx)
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+
+x = torch.randn(5, 5)
+mask = x > 0
+idx = mask.nonzero(as_tuple=False)
+print(idx)
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+
+x = torch.randn(5, 5)
+mask = x > 0
+idx = mask.nonzero(as_tuple=True)  # Update made to use as_tuple argument
+print(idx)
+```
+
+RAW RESPONSE
+------------
+Here's the upgraded code to ensure compatibility with the latest stable version of PyTorch, adhering to your specified rules:
+
+```python
+import torch
+
+x = torch.randn(5, 5)
+mask = x > 0
+idx = mask.nonzero(as_tuple=True)  # Update made to use as_tuple argument
+print(idx)
+``` 
+
+In this revision, the `mask.nonzero()` function has been updated to `mask.nonzero(as_tuple=True)` to align with newer versions of PyTorch, which allow returning the indices as a tuple. Other elements of the code remain unchanged, preserving the original functionality and logic.
+
+====================================================================================================
+ID       : pytorch_09_byte_mask_to_bool
+Framework: pytorch
+Category : tensor_dtypes
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+
+scores = torch.tensor([0.2, 0.8, 0.4])
+mask = torch.ByteTensor([1, 0, 1])
+selected = scores[mask]
+print(selected)
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+
+scores = torch.tensor([0.2, 0.8, 0.4])
+mask = torch.tensor([True, False, True])
+selected = scores[mask]
+print(selected)
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+
+scores = torch.tensor([0.2, 0.8, 0.4])
+mask = torch.tensor([1, 0, 1], dtype=torch.bool)  # Updated to use torch.bool for the mask
+selected = scores[mask]
+print(selected)
+```
+
+RAW RESPONSE
+------------
+Here is the upgraded code, ensuring compatibility with the latest stable version of PyTorch while maintaining the original functionality:
+
+```python
+import torch
+
+scores = torch.tensor([0.2, 0.8, 0.4])
+mask = torch.tensor([1, 0, 1], dtype=torch.bool)  # Updated to use torch.bool for the mask
+selected = scores[mask]
+print(selected)
+``` 
+
+In this upgrade:
+- The `torch.ByteTensor` was changed to `torch.tensor` with `dtype=torch.bool` to align with the more recent practices in PyTorch. This change maintains the same functionality in a way that is compatible with the latest version.
+
+====================================================================================================
+ID       : pytorch_10_inplace_param_update
+Framework: pytorch
+Category : optimization
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(3, 1)
+criterion = nn.MSELoss()
+
+x = torch.randn(4, 3)
+y = torch.randn(4, 1)
+
+output = model(x)
+loss = criterion(output, y)
+loss.backward()
+
+# Old style using .data for manual SGD
+for param in model.parameters():
+    param.data -= 0.1 * param.grad.data
+
+print(loss.data[0])
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(3, 1)
+criterion = nn.MSELoss()
+
+x = torch.randn(4, 3)
+y = torch.randn(4, 1)
+
+output = model(x)
+loss = criterion(output, y)
+loss.backward()
+
+with torch.no_grad():
+    for param in model.parameters():
+        param -= 0.1 * param.grad
+
+print(loss.item())
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(3, 1)
+criterion = nn.MSELoss()
+
+x = torch.randn(4, 3)
+y = torch.randn(4, 1)
+
+output = model(x)
+loss = criterion(output, y)
+loss.backward()
+
+# Updated style using .detach() for manual SGD
+with torch.no_grad():
+    for param in model.parameters():
+        param -= 0.1 * param.grad
+
+print(loss.item())
+```
+
+RAW RESPONSE
+------------
+Here is the upgraded code for PyTorch, ensuring compatibility with the latest stable version of the library:
+
+```python
+import torch
+import torch.nn as nn
+
+model = nn.Linear(3, 1)
+criterion = nn.MSELoss()
+
+x = torch.randn(4, 3)
+y = torch.randn(4, 1)
+
+output = model(x)
+loss = criterion(output, y)
+loss.backward()
+
+# Updated style using .detach() for manual SGD
+with torch.no_grad():
+    for param in model.parameters():
+        param -= 0.1 * param.grad
+
+print(loss.item())
+``` 
+
+### Changes Made:
+1. **Replaced `param.data` with `param`** for parameter updates to avoid potential issues with in-place operations.
+2. **Used `torch.no_grad()`** context to ensure gradients are not calculated for the parameter update step, which is now the recommended approach.
+3. **Changed `loss.data[0]` to `loss.item()`** for retrieving the scalar value of the loss tensor. This is the preferred method for accessing the value of a tensor.
+
+====================================================================================================
+ID       : pytorch_11_tensor_construction_requires_grad
+Framework: pytorch
+Category : tensor_creation
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+from torch.autograd import Variable
+
+x = Variable(torch.FloatTensor([[1.0, 2.0], [3.0, 4.0]]), requires_grad=True)
+print(x)
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+
+x = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32, requires_grad=True)
+print(x)
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+
+x = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+print(x)
+```
+
+RAW RESPONSE
+------------
+```python
+import torch
+
+x = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+print(x)
+```
+
+====================================================================================================
+ID       : pytorch_12_dataloader_pin_memory_and_num_workers
+Framework: pytorch
+Category : data_loading
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+x = torch.randn(100, 10)
+y = torch.randn(100, 1)
+dataset = TensorDataset(x, y)
+
+loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+for batch_x, batch_y in loader:
+    print(batch_x.size())
+    break
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+x = torch.randn(100, 10)
+y = torch.randn(100, 1)
+dataset = TensorDataset(x, y)
+
+loader = DataLoader(
+    dataset,
+    batch_size=32,
+    shuffle=True,
+    num_workers=0,
+    pin_memory=torch.cuda.is_available()
+)
+
+for batch_x, batch_y in loader:
+    print(batch_x.size())
+    break
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+x = torch.randn(100, 10)
+y = torch.randn(100, 1)
+dataset = TensorDataset(x, y)
+
+loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+for batch_x, batch_y in loader:
+    print(batch_x.size())
+    break
+```
+
+RAW RESPONSE
+------------
+```python
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+x = torch.randn(100, 10)
+y = torch.randn(100, 1)
+dataset = TensorDataset(x, y)
+
+loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+for batch_x, batch_y in loader:
+    print(batch_x.size())
+    break
 ```
 

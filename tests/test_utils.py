@@ -106,7 +106,7 @@ with tf.compat.v1.Session() as sess:
 
         assert message is None
 
-    def test_detect_tf1_usage_allows_compat_mode(self):
+    def test_detect_tf1_usage_flags_compat_mode(self):
         code = """
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
@@ -117,9 +117,11 @@ with tf.Session() as sess:
 
         message = detect_tf1_usage(code)
 
-        assert message is None
+        assert message is not None
+        assert "compat.v1" in message
+        assert "disable" in message
 
-    def test_detect_tf1_usage_requires_both_alias_and_disable(self):
+    def test_detect_tf1_usage_flags_disable_without_alias(self):
         code = """
 import tensorflow as tf
 tf.compat.v1.disable_eager_execution()
@@ -130,6 +132,7 @@ with tf.compat.v1.Session() as sess:
         message = detect_tf1_usage(code)
 
         assert message is not None
+        assert "tf.compat.v1" in message
 
     def test_detect_tf1_usage_flags_estimators(self):
         code = """
@@ -141,3 +144,30 @@ classifier = tf.estimator.DNNClassifier(hidden_units=[10], feature_columns=[])
 
         assert message is not None
         assert "tf.estimator" in message
+
+    def test_detect_tf1_usage_flags_input_without_model(self):
+        code = """
+import tensorflow as tf
+
+x = tf.keras.Input(shape=(1,))
+y = x * 2.0
+print(y)
+"""
+
+        message = detect_tf1_usage(code)
+
+        assert message is not None
+        assert "tf.keras.Input" in message or "tf.keras.Model" in message
+
+    def test_detect_tf1_usage_flags_backend_session_calls(self):
+        code = """
+import tensorflow as tf
+
+model = tf.keras.Sequential([tf.keras.layers.Dense(1)])
+tf.keras.backend.set_session(tf.Session())
+"""
+
+        message = detect_tf1_usage(code)
+
+        assert message is not None
+        assert "backend" in message

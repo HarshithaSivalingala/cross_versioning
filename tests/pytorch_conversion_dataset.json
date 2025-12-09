@@ -2,10 +2,11 @@
   {
     "id": "pytorch_01_remove_variable",
     "category": "autograd",
-    "torch1": "import torch\n\ninputs = torch.autograd.Variable(torch.ones(4, 3), requires_grad=True)\nweights = torch.autograd.Variable(torch.ones(3, 2))\noutputs = torch.mm(inputs, weights)\nprint(outputs.data)",
+    "torch1": "import torch\nfrom torch.autograd import Variable\n\ninputs = Variable(torch.ones(4, 3), requires_grad=True)\nweights = Variable(torch.ones(3, 2))\noutputs = torch.mm(inputs, weights)\nprint(outputs.data)",
     "torch2": "import torch\n\ninputs = torch.ones(4, 3, requires_grad=True)\nweights = torch.ones(3, 2)\noutputs = torch.mm(inputs, weights)\nprint(outputs.detach())",
     "expected_changes": [
-      "Removed torch.autograd.Variable (no longer needed)"
+      "Removed torch.autograd.Variable (no longer needed)",
+      "Replaced tensor.data with tensor.detach() for safe tensor access"
     ]
   },
   {
@@ -14,16 +15,109 @@
     "torch1": "import torch\n\ndef allocate():\n    tensor = torch.cuda.FloatTensor(2, 3)\n    tensor.zero_()\n    return tensor\n\nprint(allocate())",
     "torch2": "import torch\n\ndef allocate():\n    tensor = torch.zeros((2, 3), device=\"cuda\", dtype=torch.float32)\n    return tensor\n\nprint(allocate())",
     "expected_changes": [
-      "Updated torch.cuda.FloatTensor to modern tensor creation"
+      "Updated torch.cuda.FloatTensor to modern factory function (torch.zeros)",
+      "Explicitly set device and dtype instead of using legacy CUDA tensor types"
     ]
   },
   {
     "id": "pytorch_03_loss_item",
     "category": "training_loop",
-    "torch1": "import torch\n\nx = torch.autograd.Variable(torch.randn(10, 5))\nw = torch.autograd.Variable(torch.randn(5, 1), requires_grad=True)\ny = torch.matmul(x, w)\nloss = y.sum()\nloss.backward()\nprint(loss.data[0])",
+    "torch1": "import torch\nfrom torch.autograd import Variable\n\nx = Variable(torch.randn(10, 5))\nw = Variable(torch.randn(5, 1), requires_grad=True)\ny = torch.matmul(x, w)\nloss = y.sum()\nloss.backward()\nprint(loss.data[0])",
     "torch2": "import torch\n\nx = torch.randn(10, 5)\nw = torch.randn(5, 1, requires_grad=True)\ny = torch.matmul(x, w)\nloss = y.sum()\nloss.backward()\nprint(loss.item())",
     "expected_changes": [
-      "Removed torch.autograd.Variable (no longer needed)"
+      "Removed torch.autograd.Variable (no longer needed)",
+      "Replaced loss.data[0] with loss.item() to get Python scalar from 0-dim tensor"
+    ]
+  },
+  {
+    "id": "pytorch_04_softmax_dim_and_data",
+    "category": "nn_functional",
+    "torch1": "import torch\nimport torch.nn.functional as F\n\nlogits = torch.randn(3, 5)\nprobs = F.softmax(logits)\nprint(probs.data)",
+    "torch2": "import torch\nimport torch.nn.functional as F\n\nlogits = torch.randn(3, 5)\nprobs = F.softmax(logits, dim=1)\nprint(probs)",
+    "expected_changes": [
+      "Added explicit dim argument to F.softmax (required in modern PyTorch)",
+      "Avoided using tensor.data; print tensor directly (or use .detach()/.cpu().numpy() when needed)"
+    ]
+  },
+  {
+    "id": "pytorch_05_volatile_to_no_grad",
+    "category": "inference",
+    "torch1": "import torch\nfrom torch.autograd import Variable\nimport torch.nn as nn\n\nmodel = nn.Linear(4, 2)\n\nx = Variable(torch.randn(1, 4), volatile=True)\noutput = model(x)\nprint(output.data)",
+    "torch2": "import torch\nimport torch.nn as nn\n\nmodel = nn.Linear(4, 2)\n\nwith torch.no_grad():\n    x = torch.randn(1, 4)\n    output = model(x)\nprint(output)",
+    "expected_changes": [
+      "Removed use of Variable with volatile=True (deprecated)",
+      "Wrapped inference code in torch.no_grad() context for no-grad inference",
+      "Avoided using tensor.data; print tensor directly"
+    ]
+  },
+  {
+    "id": "pytorch_06_cuda_to_device",
+    "category": "device_management",
+    "torch1": "import torch\nimport torch.nn as nn\n\nmodel = nn.Linear(10, 3)\nmodel = model.cuda()\n\ninputs = torch.randn(4, 10)\ninputs = inputs.cuda()\noutputs = model(inputs)\nprint(outputs.cpu().data.numpy())",
+    "torch2": "import torch\nimport torch.nn as nn\n\ndevice = torch.device(\"cuda\" if torch.cuda.is_available() else \"cpu\")\n\nmodel = nn.Linear(10, 3).to(device)\ninputs = torch.randn(4, 10, device=device)\noutputs = model(inputs)\nprint(outputs.detach().cpu().numpy())",
+    "expected_changes": [
+      "Replaced direct .cuda() calls with device abstraction via torch.device",
+      "Moved model and tensors using .to(device) and device arguments in factory functions",
+      "Replaced outputs.cpu().data.numpy() with outputs.detach().cpu().numpy()"
+    ]
+  },
+  {
+    "id": "pytorch_07_upsample_to_interpolate",
+    "category": "nn_functional",
+    "torch1": "import torch\nimport torch.nn.functional as F\n\nx = torch.randn(1, 3, 16, 16)\n# Deprecated in modern PyTorch\nupsampled = F.upsample(x, scale_factor=2, mode=\"bilinear\")\nprint(upsampled.size())",
+    "torch2": "import torch\nimport torch.nn.functional as F\n\nx = torch.randn(1, 3, 16, 16)\n# Recommended replacement\nupsampled = F.interpolate(x, scale_factor=2, mode=\"bilinear\", align_corners=False)\nprint(upsampled.size())",
+    "expected_changes": [
+      "Replaced deprecated F.upsample with F.interpolate",
+      "Specified align_corners argument when using bilinear interpolation (required in many newer versions)"
+    ]
+  },
+  {
+    "id": "pytorch_08_nonzero_as_tuple",
+    "category": "tensor_ops",
+    "torch1": "import torch\n\nx = torch.randn(5, 5)\nmask = x > 0\nidx = mask.nonzero()\nprint(idx)",
+    "torch2": "import torch\n\nx = torch.randn(5, 5)\nmask = x > 0\nidx = mask.nonzero(as_tuple=False)\nprint(idx)",
+    "expected_changes": [
+      "Updated nonzero() usage to explicitly set as_tuple=False to avoid deprecation warnings and future behavior changes"
+    ]
+  },
+  {
+    "id": "pytorch_09_byte_mask_to_bool",
+    "category": "tensor_dtypes",
+    "torch1": "import torch\n\nscores = torch.tensor([0.2, 0.8, 0.4])\nmask = torch.ByteTensor([1, 0, 1])\nselected = scores[mask]\nprint(selected)",
+    "torch2": "import torch\n\nscores = torch.tensor([0.2, 0.8, 0.4])\nmask = torch.tensor([True, False, True])\nselected = scores[mask]\nprint(selected)",
+    "expected_changes": [
+      "Replaced ByteTensor mask with a bool tensor mask (recommended boolean indexing type)"
+    ]
+  },
+  {
+    "id": "pytorch_10_inplace_param_update",
+    "category": "optimization",
+    "torch1": "import torch\nimport torch.nn as nn\n\nmodel = nn.Linear(3, 1)\ncriterion = nn.MSELoss()\n\nx = torch.randn(4, 3)\ny = torch.randn(4, 1)\n\noutput = model(x)\nloss = criterion(output, y)\nloss.backward()\n\n# Old style using .data for manual SGD\nfor param in model.parameters():\n    param.data -= 0.1 * param.grad.data\n\nprint(loss.data[0])",
+    "torch2": "import torch\nimport torch.nn as nn\n\nmodel = nn.Linear(3, 1)\ncriterion = nn.MSELoss()\n\nx = torch.randn(4, 3)\ny = torch.randn(4, 1)\n\noutput = model(x)\nloss = criterion(output, y)\nloss.backward()\n\nwith torch.no_grad():\n    for param in model.parameters():\n        param -= 0.1 * param.grad\n\nprint(loss.item())",
+    "expected_changes": [
+      "Removed direct manipulation of param.data and param.grad.data",
+      "Performed manual parameter updates inside torch.no_grad()",
+      "Replaced loss.data[0] with loss.item()"
+    ]
+  },
+  {
+    "id": "pytorch_11_tensor_construction_requires_grad",
+    "category": "tensor_creation",
+    "torch1": "import torch\nfrom torch.autograd import Variable\n\nx = Variable(torch.FloatTensor([[1.0, 2.0], [3.0, 4.0]]), requires_grad=True)\nprint(x)\n",
+    "torch2": "import torch\n\nx = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32, requires_grad=True)\nprint(x)\n",
+    "expected_changes": [
+      "Removed Variable wrapper and used torch.tensor directly",
+      "Set dtype and requires_grad at tensor creation time instead of relying on FloatTensor + Variable"
+    ]
+  },
+  {
+    "id": "pytorch_12_dataloader_pin_memory_and_num_workers",
+    "category": "data_loading",
+    "torch1": "import torch\nfrom torch.utils.data import DataLoader, TensorDataset\n\nx = torch.randn(100, 10)\ny = torch.randn(100, 1)\ndataset = TensorDataset(x, y)\n\nloader = DataLoader(dataset, batch_size=32, shuffle=True)\n\nfor batch_x, batch_y in loader:\n    print(batch_x.size())\n    break",
+    "torch2": "import torch\nfrom torch.utils.data import DataLoader, TensorDataset\n\nx = torch.randn(100, 10)\ny = torch.randn(100, 1)\ndataset = TensorDataset(x, y)\n\nloader = DataLoader(\n    dataset,\n    batch_size=32,\n    shuffle=True,\n    num_workers=0,\n    pin_memory=torch.cuda.is_available()\n)\n\nfor batch_x, batch_y in loader:\n    print(batch_x.size())\n    break",
+    "expected_changes": [
+      "Kept core DataLoader API but added explicit num_workers and pin_memory arguments (modern, GPU-friendly best practices)",
+      "Conditionally enabled pin_memory when CUDA is available"
     ]
   }
 ]
