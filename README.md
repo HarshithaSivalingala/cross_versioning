@@ -99,3 +99,23 @@ ml-upgrader/
 ├── setup.py
 └── README.md
 ```
+
+## Conversion Regression Datasets
+
+The regression tests in `tests/test_llm_tf_conversion.py` load one dataset per
+framework. Each dataset defaults to a file named `{framework}_conversion_dataset.json`
+inside `tests/` (for example, `tests/tensorflow_conversion_dataset.json` and
+`tests/pytorch_conversion_dataset.json`).
+
+- To point a framework at a different dataset, set `LLM_DATASET_PATH_<FRAMEWORK>`
+  (e.g. `LLM_DATASET_PATH_TENSORFLOW=/tmp/tf_pairs.json`). Legacy environment
+  variables such as `TF_CONVERSION_DATASET_PATH` and `TORCH_CONVERSION_DATASET_PATH`
+  are still honoured.
+- To capture live LLM outputs for a framework, export `RUN_LLM_EVAL=1` and optionally
+  override the log location via `LLM_LIVE_RESULTS_PATH_<FRAMEWORK>`. By default logs
+  are written to `tests/llm_live_results_<framework>.txt`.
+- Run the suite with `python -m pytest tests/test_llm_tf_conversion.py`.
+
+Any new framework can reuse the same pattern: drop a
+`tests/<framework>_conversion_dataset.json` file and add the framework definition to
+`tests/test_llm_tf_conversion.py`.

@@ -7,6 +7,25 @@ from typing import Dict, List, Optional
 _UNNECESSARY_DIRECTORIES = {"__MACOSX", "__pycache__"}
 _UNNECESSARY_FILES = {".DS_Store", "Thumbs.db"}
 
+_TF1_PATTERNS = [
+    (re.compile(r"\btf\.compat\.v1\.[A-Za-z_]"), "Avoid tf.compat.v1.* symbols when targeting TF 2.x"),
+    (re.compile(r"\btf\.compat\.v1\.Session\b"), "tf.compat.v1.Session keeps the graph execution model"),
+    (re.compile(r"\btf\.Session\b"), "tf.Session is not compatible with eager execution"),
+    (re.compile(r"\btf\.placeholder\b"), "tf.placeholder should be replaced with eager tensors or Keras inputs"),
+    (re.compile(r"\btf\.global_variables_initializer\b"), "tf.global_variables_initializer is not needed in TF 2.x"),
+    (re.compile(r"\btf\.variable_scope\b"), "tf.variable_scope has no effect in TF 2.x"),
+    (re.compile(r"\btf\.estimator\."), "tf.estimator APIs are TF1-only; prefer tf.keras"),
+    (re.compile(r"\btf\.compat\.v1\.summary\."), "tf.compat.v1.summary.* should be replaced with tf.summary"),
+    (re.compile(r"\btf\.compat\.v1\.data\."), "tf.compat.v1.data.* uses graph iterators"),
+    (re.compile(r"\btf\.saved_model\.builder"), "tf.saved_model.builder is TF1-style export; use model.save"),
+    (re.compile(r"feed_dict\s*="), "feed_dict usage implies tf.Session-style execution"),
+]
+
+_COMPAT_IMPORT_RE = re.compile(r"import\s+tensorflow\.compat\.v1\s+as\s+tf")
+_COMPAT_DISABLE_RE = re.compile(
+    r"tf\.(?:compat\.v1\.)?disable_(?:v2_behavior|eager_execution)"
+)
+
 def read_file(path: str) -> str:
     """Read file content with encoding handling"""
     try:
@@ -226,3 +245,32 @@ def generate_diff(old_content: str, new_content: str, filename: str) -> str:
         n=3
     )
     return ''.join(diff)
+
+
+def detect_tf1_usage(code: str) -> Optional[str]:
+    """Return a descriptive error when TF 1.x-only APIs appear in upgraded code."""
+    normalized_code = code.lower()
+    if "tensorflow" not in normalized_code:
+        return None
+
+    # Explicit compat-mode (import compat.v1 as tf + disable_v2_behavior) is allowed
+    compat_import = bool(_COMPAT_IMPORT_RE.search(code))
+    compat_disable = bool(_COMPAT_DISABLE_RE.search(code))
+    if compat_import and compat_disable:
+        return None
+
+    violations = []
+    for pattern, message in _TF1_PATTERNS:
+        if pattern.search(code):
+            violations.append(message)
+
+    if not violations:
+        return None
+
+    unique_messages = []
+    for message in violations:
+        if message not in unique_messages:
+            unique_messages.append(message)
+
+    joined = "\n- ".join(unique_messages)
+    return "Detected TensorFlow 1.x-only APIs in upgraded code:\n- " + joined

@@ -1,0 +1,29 @@
+[
+  {
+    "id": "pytorch_01_remove_variable",
+    "category": "autograd",
+    "torch1": "import torch\n\ninputs = torch.autograd.Variable(torch.ones(4, 3), requires_grad=True)\nweights = torch.autograd.Variable(torch.ones(3, 2))\noutputs = torch.mm(inputs, weights)\nprint(outputs.data)",
+    "torch2": "import torch\n\ninputs = torch.ones(4, 3, requires_grad=True)\nweights = torch.ones(3, 2)\noutputs = torch.mm(inputs, weights)\nprint(outputs.detach())",
+    "expected_changes": [
+      "Removed torch.autograd.Variable (no longer needed)"
+    ]
+  },
+  {
+    "id": "pytorch_02_cuda_float_tensor",
+    "category": "tensor_allocation",
+    "torch1": "import torch\n\ndef allocate():\n    tensor = torch.cuda.FloatTensor(2, 3)\n    tensor.zero_()\n    return tensor\n\nprint(allocate())",
+    "torch2": "import torch\n\ndef allocate():\n    tensor = torch.zeros((2, 3), device=\"cuda\", dtype=torch.float32)\n    return tensor\n\nprint(allocate())",
+    "expected_changes": [
+      "Updated torch.cuda.FloatTensor to modern tensor creation"
+    ]
+  },
+  {
+    "id": "pytorch_03_loss_item",
+    "category": "training_loop",
+    "torch1": "import torch\n\nx = torch.autograd.Variable(torch.randn(10, 5))\nw = torch.autograd.Variable(torch.randn(5, 1), requires_grad=True)\ny = torch.matmul(x, w)\nloss = y.sum()\nloss.backward()\nprint(loss.data[0])",
+    "torch2": "import torch\n\nx = torch.randn(10, 5)\nw = torch.randn(5, 1, requires_grad=True)\ny = torch.matmul(x, w)\nloss = y.sum()\nloss.backward()\nprint(loss.item())",
+    "expected_changes": [
+      "Removed torch.autograd.Variable (no longer needed)"
+    ]
+  }
+]

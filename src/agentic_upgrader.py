@@ -72,6 +72,13 @@ def upgrade_file(input_path: str, output_path: str):
                 print(f"⚠️ {input_path} attempt {attempt} error: {error}")
                 continue
 
+            tf1_error = utils.detect_tf1_usage(new_code)
+            if tf1_error:
+                error = tf1_error
+                current_code = new_code
+                print(f"⚠️ {input_path} attempt {attempt} error: {error}")
+                continue
+
             utils.write_file(output_path, new_code)
             
             # Validate the new code
@@ -184,6 +191,13 @@ def upgrade_file_with_context(
             apology_prefixes = ("i'm sorry", "im sorry", "sorry", "i cannot", "i can't")
             if stripped_code.lower().startswith(apology_prefixes) or stripped_code.startswith("# upgraded code here"):
                 error = "LLM returned placeholder text instead of upgraded code"
+                print(f"⚠️  {input_path} attempt {attempt} error: {error}")
+                continue
+
+            tf1_error = utils.detect_tf1_usage(new_code)
+            if tf1_error:
+                error = tf1_error
+                current_code = new_code
                 print(f"⚠️  {input_path} attempt {attempt} error: {error}")
                 continue
 

@@ -1,7 +1,14 @@
 import pytest
 import tempfile
 import os
-from src.utils import read_file, write_file, build_prompt, extract_api_changes, generate_diff
+from src.utils import (
+    read_file,
+    write_file,
+    build_prompt,
+    extract_api_changes,
+    generate_diff,
+    detect_tf1_usage,
+)
 
 class TestUtils:
     
@@ -77,3 +84,60 @@ result = y.numpy()
         assert "new/test.py" in diff
         assert "asscalar" in diff
         assert "item()" in diff
+
+    def test_detect_tf1_usage_flags_patterns(self):
+        code = """
+import tensorflow as tf
+with tf.compat.v1.Session() as sess:
+    x = tf.placeholder(tf.float32)
+    sess.run(tf.compat.v1.global_variables_initializer(), feed_dict={x: [1.0]})
+"""
+
+        message = detect_tf1_usage(code)
+
+        assert message is not None
+        assert "tf.compat.v1" in message
+        assert "feed_dict" in message
+
+    def test_detect_tf1_usage_returns_none_for_non_tf_code(self):
+        code = "import torch\nprint(torch.__version__)"
+
+        message = detect_tf1_usage(code)
+
+        assert message is None
+
+    def test_detect_tf1_usage_allows_compat_mode(self):
+        code = """
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+x = tf.placeholder(tf.float32)
+with tf.Session() as sess:
+    print(sess.run(x, feed_dict={x: 1.0}))
+"""
+
+        message = detect_tf1_usage(code)
+
+        assert message is None
+
+    def test_detect_tf1_usage_requires_both_alias_and_disable(self):
+        code = """
+import tensorflow as tf
+tf.compat.v1.disable_eager_execution()
+with tf.compat.v1.Session() as sess:
+    print(sess.run(tf.constant(1)))
+"""
+
+        message = detect_tf1_usage(code)
+
+        assert message is not None
+
+    def test_detect_tf1_usage_flags_estimators(self):
+        code = """
+import tensorflow as tf
+classifier = tf.estimator.DNNClassifier(hidden_units=[10], feature_columns=[])
+"""
+
+        message = detect_tf1_usage(code)
+
+        assert message is not None
+        assert "tf.estimator" in message

@@ -1,0 +1,165 @@
+====================================================================================================
+ID       : pytorch_01_remove_variable
+Framework: pytorch
+Category : autograd
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+
+inputs = torch.autograd.Variable(torch.ones(4, 3), requires_grad=True)
+weights = torch.autograd.Variable(torch.ones(3, 2))
+outputs = torch.mm(inputs, weights)
+print(outputs.data)
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+
+inputs = torch.ones(4, 3, requires_grad=True)
+weights = torch.ones(3, 2)
+outputs = torch.mm(inputs, weights)
+print(outputs.detach())
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+
+inputs = torch.ones(4, 3, requires_grad=True)  # Updated to directly create a tensor with requires_grad
+weights = torch.ones(3, 2)  # No need for Variable wrapper
+outputs = torch.mm(inputs, weights)
+print(outputs.detach())  # Use detach() instead of .data to prevent tracking gradients
+```
+
+RAW RESPONSE
+------------
+```python
+import torch
+
+inputs = torch.ones(4, 3, requires_grad=True)  # Updated to directly create a tensor with requires_grad
+weights = torch.ones(3, 2)  # No need for Variable wrapper
+outputs = torch.mm(inputs, weights)
+print(outputs.detach())  # Use detach() instead of .data to prevent tracking gradients
+```
+
+====================================================================================================
+ID       : pytorch_02_cuda_float_tensor
+Framework: pytorch
+Category : tensor_allocation
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+
+def allocate():
+    tensor = torch.cuda.FloatTensor(2, 3)
+    tensor.zero_()
+    return tensor
+
+print(allocate())
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+
+def allocate():
+    tensor = torch.zeros((2, 3), device="cuda", dtype=torch.float32)
+    return tensor
+
+print(allocate())
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+
+def allocate():
+    tensor = torch.cuda.FloatTensor(2, 3)
+    tensor.zero_()
+    return tensor
+
+print(allocate())
+```
+
+RAW RESPONSE
+------------
+```python
+import torch
+
+def allocate():
+    tensor = torch.cuda.FloatTensor(2, 3)
+    tensor.zero_()
+    return tensor
+
+print(allocate())
+```
+
+====================================================================================================
+ID       : pytorch_03_loss_item
+Framework: pytorch
+Category : training_loop
+====================================================================================================
+
+INPUT (PyTorch legacy)
+-----------
+```python
+import torch
+
+x = torch.autograd.Variable(torch.randn(10, 5))
+w = torch.autograd.Variable(torch.randn(5, 1), requires_grad=True)
+y = torch.matmul(x, w)
+loss = y.sum()
+loss.backward()
+print(loss.data[0])
+```
+
+EXPECTED (PyTorch modern)
+--------------
+```python
+import torch
+
+x = torch.randn(10, 5)
+w = torch.randn(5, 1, requires_grad=True)
+y = torch.matmul(x, w)
+loss = y.sum()
+loss.backward()
+print(loss.item())
+```
+
+LLM OUTPUT
+----------
+```python
+import torch
+
+x = torch.randn(10, 5, requires_grad=True)  # Directly create a tensor with requires_grad
+w = torch.randn(5, 1, requires_grad=True)  # Directly create a tensor with requires_grad
+y = torch.matmul(x, w)
+loss = y.sum()
+loss.backward()
+print(loss.item())  # Use item() to get the value as a standard Python number
+```
+
+RAW RESPONSE
+------------
+```python
+import torch
+
+x = torch.randn(10, 5, requires_grad=True)  # Directly create a tensor with requires_grad
+w = torch.randn(5, 1, requires_grad=True)  # Directly create a tensor with requires_grad
+y = torch.matmul(x, w)
+loss = y.sum()
+loss.backward()
+print(loss.item())  # Use item() to get the value as a standard Python number
+```
+

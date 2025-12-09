@@ -1,0 +1,242 @@
+[
+  {
+    "id": "sample_01_basic_session",
+    "category": "core/session",
+    "tf1": "import tensorflow as tf\n\na = tf.constant(3.0)\nb = tf.constant(2.0)\nc = a * b\n\nwith tf.Session() as sess:\n    result = sess.run(c)\n    print(\"Result:\", result)",
+    "tf2": "import tensorflow as tf\n\na = tf.constant(3.0)\nb = tf.constant(2.0)\nc = a * b\n\nprint(\"Result:\", c.numpy())",
+    "expected_changes": [
+      "Removed tf.Session and sess.run in favor of TF 2.x eager execution",
+      "Used Tensor.numpy() to fetch values instead of sess.run"
+    ]
+  },
+  {
+    "id": "sample_02_placeholder_feed_dict",
+    "category": "placeholders_to_tensors",
+    "tf1": "import tensorflow as tf\n\nx = tf.placeholder(tf.float32, shape=[None])\ny = x * 2.0\n\nwith tf.Session() as sess:\n    out = sess.run(y, feed_dict={x: [1.0, 2.0, 3.0]})\n    print(out)",
+    "tf2": "import tensorflow as tf\n\nx = tf.constant([1.0, 2.0, 3.0], dtype=tf.float32)\ny = x * 2.0\nprint(y.numpy())",
+    "expected_changes": [
+      "Replaced tf.placeholder with a concrete tf.constant input tensor",
+      "Removed tf.Session and feed_dict in favor of eager execution",
+      "Used Tensor.numpy() to convert the result to a NumPy array"
+    ]
+  },
+  {
+    "id": "sample_03_placeholder_model_input",
+    "category": "placeholders_to_keras_input",
+    "tf1": "import tensorflow as tf\n\nx = tf.placeholder(tf.float32, shape=[None, 784])\n\nh1 = tf.layers.dense(x, 128, activation=tf.nn.relu)\nlogits = tf.layers.dense(h1, 10)\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n    dummy = sess.run(logits, feed_dict={x: [[0.0] * 784]})\n    print(dummy)",
+    "tf2": "import tensorflow as tf\n\ninputs = tf.keras.Input(shape=(784,))\nh1 = tf.keras.layers.Dense(128, activation=\"relu\")(inputs)\nlogits = tf.keras.layers.Dense(10)(h1)\n\nmodel = tf.keras.Model(inputs=inputs, outputs=logits)\n\ndummy = model(tf.zeros((1, 784)))\nprint(dummy.numpy())",
+    "expected_changes": [
+      "Replaced tf.placeholder with tf.keras.Input for model inputs",
+      "Migrated tf.layers.dense to tf.keras.layers.Dense",
+      "Wrapped the graph in a tf.keras.Model for easy execution",
+      "Removed tf.Session, tf.global_variables_initializer, and feed_dict in favor of eager model calls"
+    ]
+  },
+  {
+    "id": "sample_04_global_variables_initializer",
+    "category": "init",
+    "tf1": "import tensorflow as tf\n\nw = tf.get_variable(\"w\", shape=[3, 3],\n                    initializer=tf.random_normal_initializer())\nb = tf.get_variable(\"b\", shape=[3],\n                    initializer=tf.zeros_initializer())\n\nz = tf.matmul(tf.ones([1, 3]), w) + b\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n    print(sess.run(z))",
+    "tf2": "import tensorflow as tf\n\ndense = tf.keras.layers.Dense(3)\n\nz = dense(tf.ones((1, 3)))\nprint(z.numpy())",
+    "expected_changes": [
+      "Replaced explicit tf.get_variable weights and manual matmul with a tf.keras.layers.Dense layer",
+      "Removed tf.global_variables_initializer; Keras layers initialize variables on first call",
+      "Removed tf.Session and sess.run; used eager execution with Tensor.numpy()"
+    ]
+  },
+  {
+    "id": "sample_05_get_variable_scope",
+    "category": "variable_scope_to_layers",
+    "tf1": "import tensorflow as tf\n\nwith tf.variable_scope(\"shared\", reuse=None):\n    w = tf.get_variable(\"w\", shape=[5, 5])\n    y1 = tf.matmul(tf.ones([1, 5]), w)\n\nwith tf.variable_scope(\"shared\", reuse=True):\n    w2 = tf.get_variable(\"w\", shape=[5, 5])\n    y2 = tf.matmul(tf.ones([1, 5]), w2)\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n    print(sess.run([y1, y2]))",
+    "tf2": "import tensorflow as tf\n\ndense = tf.keras.layers.Dense(5, use_bias=False)\n\ny1 = dense(tf.ones((1, 5)))\ny2 = dense(tf.ones((1, 5)))\n\nprint(y1.numpy(), y2.numpy())",
+    "expected_changes": [
+      "Replaced tf.variable_scope/tf.get_variable-based weight sharing with a single reusable tf.keras.layers.Dense instance",
+      "Removed tf.global_variables_initializer; Keras handles variable initialization internally",
+      "Removed tf.Session and sess.run; used eager execution with Tensor.numpy()"
+    ]
+  },
+  {
+    "id": "sample_06_tf_layers_dense",
+    "category": "tf_layers_to_tf_keras",
+    "tf1": "import tensorflow as tf\n\ninputs = tf.placeholder(tf.float32, shape=[None, 16])\nhidden = tf.layers.dense(inputs, 32, activation=tf.nn.relu)\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n    out = sess.run(hidden, feed_dict={inputs: [[0.0]*16]})\n    print(out)",
+    "tf2": "import tensorflow as tf\n\ninputs = tf.keras.Input(shape=(16,))\nhidden = tf.keras.layers.Dense(32, activation=\"relu\")(inputs)\n\nmodel = tf.keras.Model(inputs=inputs, outputs=hidden)\nout = model(tf.zeros((1, 16)))\nprint(out.numpy())",
+    "expected_changes": [
+      "Replaced tf.placeholder with tf.keras.Input",
+      "Migrated tf.layers.dense to tf.keras.layers.Dense",
+      "Wrapped computation in a tf.keras.Model",
+      "Removed tf.Session, tf.global_variables_initializer, and feed_dict; used eager model calls instead"
+    ]
+  },
+  {
+    "id": "sample_07_optimizer_minimize",
+    "category": "optimizer_to_gradient_tape",
+    "tf1": "import tensorflow as tf\n\nx = tf.placeholder(tf.float32, shape=[None, 1])\ny_true = tf.placeholder(tf.float32, shape=[None, 1])\n\nw = tf.get_variable(\"w\", shape=[1, 1],\n                    initializer=tf.random_normal_initializer())\ny_pred = tf.matmul(x, w)\nloss = tf.reduce_mean(tf.square(y_pred - y_true))\n\noptimizer = tf.train.GradientDescentOptimizer(0.1)\ntrain_op = optimizer.minimize(loss)\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n    for step in range(10):\n        _, l = sess.run(\n            [train_op, loss],\n            feed_dict={x: [[1.0]], y_true: [[2.0]]}\n        )\n        print(step, l)",
+    "tf2": "import tensorflow as tf\n\nw = tf.Variable(tf.random.normal([1, 1]))\noptimizer = tf.keras.optimizers.SGD(0.1)\n\nfor step in range(10):\n    with tf.GradientTape() as tape:\n        x = tf.constant([[1.0]])\n        y_true = tf.constant([[2.0]])\n        y_pred = tf.matmul(x, w)\n        loss = tf.reduce_mean(tf.square(y_pred - y_true))\n\n    grads = tape.gradient(loss, [w])\n    optimizer.apply_gradients(zip(grads, [w]))\n    print(step, loss.numpy())",
+    "expected_changes": [
+      "Replaced tf.placeholder inputs with concrete tf.constant tensors inside the training loop",
+      "Replaced tf.get_variable with tf.Variable for trainable parameters",
+      "Replaced tf.train.GradientDescentOptimizer.minimize with tf.GradientTape and tf.keras.optimizers.SGD",
+      "Removed tf.Session, tf.global_variables_initializer, and feed_dict; training now runs eagerly"
+    ]
+  },
+  {
+    "id": "sample_08_model_fit",
+    "category": "training_loop_to_model_fit",
+    "tf1": "import tensorflow as tf\nimport numpy as np\n\nx = tf.placeholder(tf.float32, [None, 1])\ny = tf.placeholder(tf.float32, [None, 1])\n\nw = tf.get_variable(\"w\", shape=[1, 1])\npred = tf.matmul(x, w)\nloss = tf.losses.mean_squared_error(y, pred)\n\ntrain_op = tf.train.AdamOptimizer(0.01).minimize(loss)\n\nX_data = np.random.randn(100, 1)\nY_data = 3 * X_data\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n    for step in range(100):\n        _, l = sess.run(\n            [train_op, loss],\n            feed_dict={x: X_data, y: Y_data}\n        )\n    print(\"Final loss:\", l)",
+    "tf2": "import tensorflow as tf\nimport numpy as np\n\nX_data = np.random.randn(100, 1).astype(\"float32\")\nY_data = 3 * X_data\n\nmodel = tf.keras.Sequential([\n    tf.keras.layers.Dense(1, use_bias=False, input_shape=(1,))\n])\n\nmodel.compile(optimizer=tf.keras.optimizers.Adam(0.01),\n              loss=\"mse\")\n\nmodel.fit(X_data, Y_data, epochs=100, verbose=0)\nprint(\"Final loss:\", model.evaluate(X_data, Y_data, verbose=0))",
+    "expected_changes": [
+      "Replaced tf.placeholder-based inputs with NumPy arrays fed directly into Keras",
+      "Replaced tf.get_variable-based linear model with a tf.keras.layers.Dense layer inside tf.keras.Sequential",
+      "Replaced manual training loop and tf.train.AdamOptimizer.minimize with model.compile and model.fit",
+      "Removed tf.Session, tf.global_variables_initializer, and feed_dict in favor of the high-level Keras training API"
+    ]
+  },
+  {
+    "id": "sample_09_tf_data_iterator",
+    "category": "tf_data_api",
+    "tf1": "import tensorflow as tf\n\ndataset = tf.data.Dataset.range(5)\niterator = dataset.make_one_shot_iterator()\nnext_elem = iterator.get_next()\n\nwith tf.Session() as sess:\n    try:\n        while True:\n            v = sess.run(next_elem)\n            print(v)\n    except tf.errors.OutOfRangeError:\n        pass",
+    "tf2": "import tensorflow as tf\n\ndataset = tf.data.Dataset.range(5)\n\nfor v in dataset:\n    print(v.numpy())",
+    "expected_changes": [
+      "Removed Dataset.make_one_shot_iterator and iterator.get_next in favor of direct Python iteration",
+      "Removed tf.Session and sess.run; dataset elements are consumed eagerly",
+      "Used Tensor.numpy() to print the scalar values"
+    ]
+  },
+  {
+    "id": "sample_10_tf_while_loop",
+    "category": "control_flow",
+    "tf1": "import tensorflow as tf\n\ni = tf.constant(0)\nc = lambda i: tf.less(i, 5)\nb = lambda i: tf.add(i, 1)\n\nresult = tf.while_loop(c, b, [i])\n\nwith tf.Session() as sess:\n    print(sess.run(result))",
+    "tf2": "import tensorflow as tf\n\ni = 0\nwhile i < 5:\n    i += 1\n\nprint(i)",
+    "expected_changes": [
+      "Replaced tf.while_loop with a regular Python while loop under eager execution",
+      "Stopped using symbolic tf.constant for the loop index; used a Python integer instead",
+      "Removed tf.Session and sess.run; control flow is handled purely by Python"
+    ]
+  },
+  {
+    "id": "sample_11_tf_cond",
+    "category": "control_flow",
+    "tf1": "import tensorflow as tf\n\nx = tf.placeholder(tf.float32)\n\ny = tf.cond(x > 0.0,\n            lambda: x * 2.0,\n            lambda: -x)\n\nwith tf.Session() as sess:\n    print(sess.run(y, feed_dict={x: 3.0}))",
+    "tf2": "import tensorflow as tf\n\nx = tf.constant(3.0)\n\ny = tf.cond(x > 0.0,\n            lambda: x * 2.0,\n            lambda: -x)\n\nprint(y.numpy())",
+    "expected_changes": [
+      "Replaced tf.placeholder and feed_dict with a concrete tf.constant input",
+      "Kept tf.cond but executed it in eager mode, which is supported in TF 2.x",
+      "Removed tf.Session and sess.run; used Tensor.numpy() to obtain the result"
+    ]
+  },
+  {
+    "id": "sample_12_saved_model_export",
+    "category": "saving_models",
+    "tf1": "import tensorflow as tf\nimport os\n\nx = tf.placeholder(tf.float32, shape=[None, 4], name=\"x\")\nw = tf.get_variable(\"w\", shape=[4, 1])\ny = tf.matmul(x, w, name=\"y\")\n\nbuilder = tf.saved_model.builder.SavedModelBuilder(\"export_dir\")\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n\n    inputs = {\"x\": tf.saved_model.utils.build_tensor_info(x)}\n    outputs = {\"y\": tf.saved_model.utils.build_tensor_info(y)}\n\n    signature = tf.saved_model.signature_def_utils.build_signature_def(\n        inputs=inputs,\n        outputs=outputs,\n        method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME,\n    )\n\n    builder.add_meta_graph_and_variables(\n        sess,\n        [tf.saved_model.tag_constants.SERVING],\n        signature_def_map={\n            tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY: signature\n        }\n    )\n\n    builder.save()",
+    "tf2": "import tensorflow as tf\n\ninputs = tf.keras.Input(shape=(4,), name=\"x\")\noutputs = tf.keras.layers.Dense(1, use_bias=True, name=\"dense\")(inputs)\nmodel = tf.keras.Model(inputs=inputs, outputs=outputs)\n\nmodel.save(\"export_dir\")",
+    "expected_changes": [
+      "Replaced tf.placeholder with tf.keras.Input for model inputs",
+      "Replaced tf.get_variable and manual matmul with a tf.keras.layers.Dense layer managed by Keras",
+      "Replaced low-level SavedModelBuilder API with the Keras model.save API",
+      "Removed tf.Session, tf.global_variables_initializer, and manual signature construction"
+    ]
+  },
+  {
+    "id": "sample_13_summary_writer",
+    "category": "summaries",
+    "tf1": "import tensorflow as tf\n\nstep = tf.placeholder(tf.int64)\nvalue = tf.placeholder(tf.float32)\n\nsummary = tf.summary.scalar(\"my_scalar\", value)\nwriter = tf.summary.FileWriter(\"logs\")\n\nwith tf.Session() as sess:\n    for i in range(5):\n        s = sess.run(summary, feed_dict={step: i, value: float(i)})\n        writer.add_summary(s, global_step=i)\n\nwriter.close()",
+    "tf2": "import tensorflow as tf\n\nwriter = tf.summary.create_file_writer(\"logs\")\n\nwith writer.as_default():\n    for i in range(5):\n        tf.summary.scalar(\"my_scalar\", float(i), step=i)",
+    "expected_changes": [
+      "Replaced tf.placeholder-based scalar logging with direct Python values in TF 2.x",
+      "Replaced tf.summary.FileWriter and add_summary with tf.summary.create_file_writer and context manager usage",
+      "Removed tf.Session and sess.run; summaries are written in eager mode"
+    ]
+  },
+  {
+    "id": "sample_14_rnn_dynamic_rnn",
+    "category": "rnns",
+    "tf1": "import tensorflow as tf\n\ninputs = tf.placeholder(tf.float32, [None, 10, 8])  # (batch, time, features)\ncell = tf.nn.rnn_cell.LSTMCell(16)\noutputs, state = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n    out_val = sess.run(outputs,\n                       feed_dict={inputs: tf.zeros([2, 10, 8]).eval()})\n    print(out_val.shape)",
+    "tf2": "import tensorflow as tf\n\ninputs = tf.keras.Input(shape=(10, 8))\noutputs = tf.keras.layers.LSTM(16, return_sequences=True)(inputs)\nmodel = tf.keras.Model(inputs=inputs, outputs=outputs)\n\nout_val = model(tf.zeros([2, 10, 8]))\nprint(out_val.shape)",
+    "expected_changes": [
+      "Replaced tf.placeholder with tf.keras.Input for sequence data",
+      "Replaced tf.nn.rnn_cell.LSTMCell + tf.nn.dynamic_rnn with tf.keras.layers.LSTM",
+      "Wrapped the RNN in a tf.keras.Model",
+      "Removed tf.Session, tf.global_variables_initializer, and feed_dict; used eager model calls instead"
+    ]
+  },
+  {
+    "id": "sample_15_estimator",
+    "category": "estimator_to_keras",
+    "tf1": "import tensorflow as tf\n\nfeature_columns = [tf.feature_column.numeric_column(\"x\", shape=[1])]\n\nestimator = tf.estimator.DNNClassifier(\n    feature_columns=feature_columns,\n    hidden_units=[10],\n    n_classes=2\n)\n\ndef input_fn():\n    return {\"x\": [0.0, 1.0]}, [0, 1]\n\nestimator.train(input_fn=input_fn, steps=10)",
+    "tf2": "import tensorflow as tf\nimport numpy as np\n\nx = np.array([[0.0], [1.0]], dtype=\"float32\")\ny = np.array([0, 1], dtype=\"int32\")\n\nmodel = tf.keras.Sequential([\n    tf.keras.layers.Dense(10, activation=\"relu\", input_shape=(1,)),\n    tf.keras.layers.Dense(2, activation=\"softmax\")\n])\n\nmodel.compile(\n    optimizer=\"adam\",\n    loss=\"sparse_categorical_crossentropy\",\n    metrics=[\"accuracy\"]\n)\n\nmodel.fit(x, y, epochs=10, verbose=0)",
+    "expected_changes": [
+      "Replaced tf.estimator.DNNClassifier with a tf.keras.Sequential classification model",
+      "Replaced input_fn and feature_columns with direct NumPy arrays fed into model.fit",
+      "Used Keras model.compile and model.fit as the high-level training interface"
+    ]
+  },
+  {
+    "id": "sample_16_contrib_layers",
+    "category": "contrib_removal",
+    "tf1": "import tensorflow as tf\n\nx = tf.placeholder(tf.float32, shape=[None, 4])\n\nh = tf.contrib.layers.fully_connected(x, 16, activation_fn=tf.nn.relu)\nlogits = tf.contrib.layers.fully_connected(h, 3, activation_fn=None)\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n    print(sess.run(logits, feed_dict={x: [[0.0, 0.0, 0.0, 0.0]]}))",
+    "tf2": "import tensorflow as tf\n\ninputs = tf.keras.Input(shape=(4,))\nh = tf.keras.layers.Dense(16, activation=\"relu\")(inputs)\nlogits = tf.keras.layers.Dense(3)(h)\n\nmodel = tf.keras.Model(inputs=inputs, outputs=logits)\nprint(model(tf.zeros((1, 4))).numpy())",
+    "expected_changes": [
+      "Replaced tf.placeholder with tf.keras.Input",
+      "Removed deprecated tf.contrib.layers.fully_connected in favor of tf.keras.layers.Dense",
+      "Wrapped the network in a tf.keras.Model",
+      "Removed tf.Session, tf.global_variables_initializer, and feed_dict in favor of eager model execution"
+    ]
+  },
+  {
+    "id": "sample_17_tfrecord_input",
+    "category": "tfrecords",
+    "tf1": "import tensorflow as tf\n\nfilenames = [\"data.tfrecord\"]\n\ndataset = tf.data.TFRecordDataset(filenames)\n\ndef parse_fn(example_proto):\n    features = {\n        \"x\": tf.FixedLenFeature([1], tf.float32),\n    }\n    parsed = tf.parse_single_example(example_proto, features)\n    return parsed[\"x\"]\n\ndataset = dataset.map(parse_fn)\niterator = dataset.make_one_shot_iterator()\nnext_elem = iterator.get_next()\n\nwith tf.Session() as sess:\n    try:\n        while True:\n            print(sess.run(next_elem))\n    except tf.errors.OutOfRangeError:\n        pass",
+    "tf2": "import tensorflow as tf\n\nfilenames = [\"data.tfrecord\"]\ndataset = tf.data.TFRecordDataset(filenames)\n\nfeature_description = {\n    \"x\": tf.io.FixedLenFeature([1], tf.float32),\n}\n\ndef parse_fn(example_proto):\n    parsed = tf.io.parse_single_example(example_proto, feature_description)\n    return parsed[\"x\"]\n\ndataset = dataset.map(parse_fn)\n\nfor elem in dataset:\n    print(elem.numpy())",
+    "expected_changes": [
+      "Replaced tf.parse_single_example with tf.io.parse_single_example",
+      "Replaced tf.FixedLenFeature with tf.io.FixedLenFeature",
+      "Removed Dataset.make_one_shot_iterator and sess.run; iterated directly over the dataset in eager mode",
+      "Used Tensor.numpy() to print parsed feature values"
+    ]
+  },
+  {
+    "id": "sample_18_distribution",
+    "category": "distribution_strategy",
+    "tf1": "import tensorflow as tf\n\nwith tf.device(\"/gpu:0\"):\n    x = tf.constant([1.0, 2.0, 3.0])\n\nwith tf.Session() as sess:\n    print(sess.run(x))",
+    "tf2": "import tensorflow as tf\n\nstrategy = tf.distribute.MirroredStrategy()\n\nwith strategy.scope():\n    x = tf.constant([1.0, 2.0, 3.0])\n\nprint(x.numpy())",
+    "expected_changes": [
+      "Replaced manual tf.device placement with tf.distribute.MirroredStrategy for distribution",
+      "Created tensors inside strategy.scope() as recommended in TF 2.x",
+      "Removed tf.Session and sess.run; used eager execution with Tensor.numpy()"
+    ]
+  },
+  {
+    "id": "sample_19_tf_function",
+    "category": "tf_function",
+    "tf1": "import tensorflow as tf\n\nx = tf.placeholder(tf.float32)\ny = x * x\n\nwith tf.Session() as sess:\n    print(sess.run(y, feed_dict={x: 3.0}))",
+    "tf2": "import tensorflow as tf\n\n@tf.function\ndef square(x):\n    return x * x\n\nprint(square(tf.constant(3.0)).numpy())",
+    "expected_changes": [
+      "Replaced tf.placeholder and feed_dict with a function argument and tf.constant input",
+      "Wrapped the computation in a tf.function to build a graph in TF 2.x style",
+      "Removed tf.Session and sess.run; used tf.function with eager-compatible execution and Tensor.numpy()"
+    ]
+  },
+  {
+    "id": "sample_20_image_preprocessing",
+    "category": "image_ops",
+    "tf1": "import tensorflow as tf\n\nfile_contents = tf.read_file(\"image.jpg\")\nimage = tf.image.decode_jpeg(file_contents)\nresized = tf.image.resize_images(image, [224, 224])\n\nwith tf.Session() as sess:\n    out = sess.run(resized)\n    print(out.shape)",
+    "tf2": "import tensorflow as tf\n\nfile_contents = tf.io.read_file(\"image.jpg\")\nimage = tf.io.decode_jpeg(file_contents)\nresized = tf.image.resize(image, [224, 224])\nprint(resized.shape)",
+    "expected_changes": [
+      "Replaced tf.read_file with tf.io.read_file",
+      "Replaced tf.image.decode_jpeg with tf.io.decode_jpeg",
+      "Replaced tf.image.resize_images with tf.image.resize",
+      "Removed tf.Session and sess.run; used eager execution to inspect tensor shape directly"
+    ]
+  },
+  {
+    "id": "sample_22_custom_layer",
+    "category": "subclassing",
+    "tf1": "import tensorflow as tf\n\nclass MyLayer(tf.layers.Layer):\n    def __init__(self, units=32):\n        super(MyLayer, self).__init__()\n        self.units = units\n\n    def build(self, input_shape):\n        self.w = self.add_variable(\n            name=\"w\",\n            shape=[int(input_shape[-1]), self.units]\n        )\n        self.b = self.add_variable(\n            name=\"b\",\n            shape=[self.units],\n            initializer=tf.zeros_initializer()\n        )\n\n    def call(self, inputs):\n        return tf.matmul(inputs, self.w) + self.b\n\nx = tf.placeholder(tf.float32, [None, 4])\nlayer = MyLayer(3)\ny = layer(x)\n\nwith tf.Session() as sess:\n    sess.run(tf.global_variables_initializer())\n    print(sess.run(y, feed_dict={x: [[1.0, 2.0, 3.0, 4.0]]}))",
+    "tf2": "import tensorflow as tf\n\nclass MyLayer(tf.keras.layers.Layer):\n    def __init__(self, units=32):\n        super().__init__()\n        self.units = units\n\n    def build(self, input_shape):\n        self.w = self.add_weight(\n            shape=(input_shape[-1], self.units),\n            initializer=\"random_normal\",\n            trainable=True,\n            name=\"w\",\n        )\n        self.b = self.add_weight(\n            shape=(self.units,),\n            initializer=\"zeros\",\n            trainable=True,\n            name=\"b\",\n        )\n\n    def call(self, inputs):\n        return tf.matmul(inputs, self.w) + self.b\n\nlayer = MyLayer(3)\ny = layer(tf.constant([[1.0, 2.0, 3.0, 4.0]]))\nprint(y.numpy())",
+    "expected_changes": [
+      "Replaced tf.layers.Layer subclassing with tf.keras.layers.Layer subclassing",
+      "Replaced add_variable with add_weight for defining trainable parameters",
+      "Replaced tf.placeholder with a concrete tf.constant input when calling the layer",
+      "Removed tf.Session, tf.global_variables_initializer, and feed_dict; layer is executed eagerly and Tensor.numpy() is used to print the result"
+    ]
+  }
+]
