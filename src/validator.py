@@ -26,6 +26,80 @@ def validate_syntax(code: str) -> Tuple[bool, Optional[str]]:
         return False, f"Syntax error: {exc}"
 
 
+def validate_tf2_general(code: str) -> Tuple[bool, List[str]]:
+    """General TF2 quality checks - catches issues across all patterns."""
+    issues = []
+    
+    # Check 1: TF1-only APIs that must be removed
+    tf1_only_apis = {
+        'tf.Session': 'Remove tf.Session - use eager execution',
+        'sess.run': 'Remove sess.run - use eager execution',
+        'tf.placeholder': 'Remove tf.placeholder - use function parameters',
+        'tf.get_variable': 'Replace tf.get_variable with tf.Variable',
+        'tf.variable_scope': 'Replace tf.variable_scope with Python classes',
+        'tf.contrib.': 'Remove tf.contrib.* - entire module removed in TF2',
+        'slim.': 'Replace slim.* with tf.data.Dataset and tf.keras',
+        'tf.app.run': 'Replace tf.app.run with standard Python main',
+        'tf.flags': 'Replace tf.flags with argparse or absl.flags',
+        'tf.logging': 'Replace tf.logging with Python logging module',
+    }
+    
+    for api, fix in tf1_only_apis.items():
+        if api in code:
+            issues.append(fix)
+    
+    # Check 2: Python 2 compatibility (not needed)
+    if 'from __future__ import' in code:
+        issues.append("Remove 'from __future__ import' statements (Python 2 compatibility not needed in TF2)")
+    
+    # Check 3: File patterns without glob
+    if 'TFRecordDataset' in code:
+        # Check if there's a pattern variable being used
+        has_pattern = any(x in code for x in ['%s', '%.format', 'f"', "f'", '.format('])
+        has_glob = 'tf.io.gfile.glob' in code or 'tf.io.matching_files' in code
+        
+        if has_pattern and not has_glob:
+            issues.append("Use tf.io.gfile.glob() to resolve file patterns before passing to TFRecordDataset")
+    
+    # Check 4: Missing performance optimizations
+    if 'tf.data' in code and '.map(' in code:
+        if 'num_parallel_calls' not in code and 'AUTOTUNE' not in code:
+            issues.append("Add num_parallel_calls=tf.data.AUTOTUNE to .map() calls for performance")
+    
+    # Check 5: Dataset functions returning dicts
+    if any(x in code for x in ['def get_split', 'def get_dataset', 'def load_data', 'def create_dataset']):
+        # Check if function returns dict with metadata keys
+        if "return {" in code:
+            metadata_keys = ["'reader'", "'decoder'", "'data_sources'", '"reader"', '"decoder"', '"data_sources"']
+            if any(key in code for key in metadata_keys):
+                issues.append("Dataset functions must return tf.data.Dataset objects, not metadata dictionaries")
+    
+    # Check 6: VarLenFeature without sparse conversion
+    if 'VarLenFeature' in code and 'parse_single_example' in code:
+        if 'tf.sparse.to_dense' not in code and 'sparse.to_dense' not in code:
+            issues.append("VarLenFeature returns sparse tensors - use tf.sparse.to_dense() to convert to dense")
+    
+    # Check 7: Awkward default values
+    if 'default_value=tf.zeros(' in code or 'default_value=tf.constant(' in code:
+        issues.append("Use simple default values (like -1 or '') instead of tf.zeros() or tf.constant()")
+    
+    # Check 8: Empty or useless operations
+    if 'with_options(tf.data.Options())' in code:
+        issues.append("Remove .with_options(tf.data.Options()) - it does nothing with empty options")
+    
+    # Check 9: Experimental APIs
+    if 'tf.data.experimental' in code or 'tf.contrib.data' in code:
+        issues.append("Replace experimental APIs with stable TF2 alternatives")
+    
+    # Check 10: Old-style feature specs
+    if 'tf.FixedLenFeature' in code and 'tf.io.FixedLenFeature' not in code:
+        # Check if they're using old style without tf.io prefix
+        if 'import tensorflow as tf' in code:
+            issues.append("Use tf.io.FixedLenFeature instead of tf.FixedLenFeature (API moved to tf.io)")
+    
+    return len(issues) == 0, issues
+
+
 def _load_code(file_path: str, preloaded_code: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if preloaded_code is not None:
         return preloaded_code, None
@@ -50,6 +124,12 @@ def validate_code(
     if not is_valid:
         return False, error
 
+    # TF2-specific validation
+    if "tensorflow" in (code or "") or "import tf" in (code or ""):
+        is_valid_tf2, tf2_issues = validate_tf2_general(code or "")
+        if not is_valid_tf2:
+            return False, "TF2 quality issues:\n" + "\n".join(f"  - {issue}" for issue in tf2_issues)
+
     # Compile check
     try:
         subprocess.run(
@@ -61,7 +141,7 @@ def validate_code(
     except subprocess.CalledProcessError as exc:
         return False, f"Compilation error: {exc.stderr}"
 
-    # Basic import test (safer than full execution)
+    # Basic import test
     try:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as tmp:
             tmp.write(
@@ -70,11 +150,9 @@ try:
     import sys
     sys.path.insert(0, '{os.path.dirname(file_path)}')
 
-    # Try to parse and validate imports
     with open('{file_path}', 'r') as f:
         code = f.read()
 
-    # Extract and test imports
     import ast
     tree = ast.parse(code)
     for node in ast.walk(tree):
@@ -83,7 +161,7 @@ try:
                 try:
                     __import__(alias.name)
                 except ImportError:
-                    pass  # Some imports might not be available in test env
+                    pass
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 try:
@@ -124,6 +202,7 @@ except Exception as e:
             return False, runtime_error
 
     return True, None
+
 
 @dataclass
 class CodeFile:

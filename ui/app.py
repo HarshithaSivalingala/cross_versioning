@@ -262,7 +262,7 @@ def main():
         else:
             st.warning("⚠️ Provide an OpenRouter key via .env or enter it here before running an upgrade.")
 
-        model_options = ["openai/gpt-4o-mini", "openai/gpt-4o", "openai/gpt-4"]
+        model_options = ["openai/gpt-4o-mini", "openai/gpt-4o", "openai/gpt-4", "anthropic/claude-3.5-sonnet"]
         model = st.selectbox(
             "Model",
             model_options,
@@ -556,7 +556,7 @@ def main():
 
                         try:
                             # Set model
-                            os.environ["ML_UPGRADER_MODEL"] = model
+                            os.environ["OPENROUTER_MODEL"] = model
 
                             runtime_config_path = None
                             previous_runtime_config_env = os.getenv("ML_UPGRADER_RUNTIME_CONFIG")

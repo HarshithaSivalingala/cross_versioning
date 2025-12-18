@@ -19,7 +19,7 @@ else:
 
 
 def upgrade_file(input_path: str, output_path: str):
-    """Upgrade a single file with detailed tracking"""
+    """Upgrade a single file with two-pass approach: official tool + LLM."""
     
     MAX_RETRIES = int(os.getenv("ML_UPGRADER_MAX_RETRIES", "5"))
     
@@ -44,14 +44,29 @@ def upgrade_file(input_path: str, output_path: str):
         )
     
     old_code = utils.read_file(input_path)
+    
+    # PASS 1: Try official tf_upgrade_v2 tool first
+    print(f"Pass 1: Attempting official tf_upgrade_v2 on {input_path}...")
+    preprocessed_code = utils.preprocess_with_official_tool(old_code)
+    
+    if preprocessed_code != old_code:
+        print(f"✅ Official tool made automatic conversions")
+        current_code = preprocessed_code
+    else:
+        print(f"ℹ️ Official tool made no changes, proceeding with original")
+        current_code = old_code
+    
+    # PASS 2: LLM refinement and quality improvement
+    print(f" Pass 2: LLM refinement...")
+    
     error = None
-    current_code = old_code
-
+    
+    # Pre-check validation
     try:
         precheck_valid, precheck_error = validator.validate_code(input_path, run_runtime=False)
         if not precheck_valid:
             error = precheck_error
-    except Exception as exc:  # pragma: no cover - defensive, mirrors runtime loop handling
+    except Exception as exc:
         error = str(exc)
 
     for attempt in range(1, MAX_RETRIES + 1):
@@ -66,16 +81,9 @@ def upgrade_file(input_path: str, output_path: str):
                 print(f"⚠️ {input_path} attempt {attempt} error: {error}")
                 continue
 
-            apology_prefixes = ("i'm sorry", "im sorry", "sorry", "i cannot", "i can’t")
+            apology_prefixes = ("i'm sorry", "im sorry", "sorry", "i cannot", "i can't")
             if stripped_code.lower().startswith(apology_prefixes) or stripped_code.startswith("# upgraded code here"):
                 error = "LLM returned placeholder text instead of upgraded code"
-                print(f"⚠️ {input_path} attempt {attempt} error: {error}")
-                continue
-
-            tf1_error = utils.detect_tf1_usage(new_code)
-            if tf1_error:
-                error = tf1_error
-                current_code = new_code
                 print(f"⚠️ {input_path} attempt {attempt} error: {error}")
                 continue
 
@@ -123,20 +131,7 @@ def upgrade_file_with_context(
     output_path: str,
     dependency_context: Dict[str, str]
 ) -> report_generator.FileUpgradeResult:
-    """
-    Upgrade a single file with knowledge of its dependencies.
-    
-    This is the enhanced version that knows about other files this one imports from.
-    The LLM can see the interfaces of dependencies to maintain compatibility.
-    
-    Args:
-        input_path: Path to file to upgrade
-        output_path: Where to write upgraded file
-        dependency_context: Dict mapping dependency file paths to their interface summaries
-    
-    Returns:
-        FileUpgradeResult with upgrade status and details
-    """
+    """Upgrade with dependency context and two-pass approach."""
     
     MAX_RETRIES = int(os.getenv("ML_UPGRADER_MAX_RETRIES", "5"))
     
@@ -161,8 +156,22 @@ def upgrade_file_with_context(
         )
     
     old_code = utils.read_file(input_path)
+    
+    # PASS 1: Try official tool
+    print(f"🔧 Pass 1: Attempting official tf_upgrade_v2 on {input_path}...")
+    preprocessed_code = utils.preprocess_with_official_tool(old_code)
+    
+    if preprocessed_code != old_code:
+        print(f"✅ Official tool made automatic conversions")
+        current_code = preprocessed_code
+    else:
+        print(f"ℹ️ Official tool made no changes")
+        current_code = old_code
+    
+    # PASS 2: LLM with context
+    print(f"🤖 Pass 2: LLM refinement with dependency context...")
+    
     error = None
-    current_code = old_code
 
     # Pre-check validation
     try:
@@ -184,21 +193,14 @@ def upgrade_file_with_context(
             stripped_code = new_code.strip()
             if not stripped_code:
                 error = "LLM returned empty response"
-                print(f"⚠️  {input_path} attempt {attempt} error: {error}")
+                print(f" {input_path} attempt {attempt} error: {error}")
                 continue
 
             # Check for apologies or placeholder text
             apology_prefixes = ("i'm sorry", "im sorry", "sorry", "i cannot", "i can't")
             if stripped_code.lower().startswith(apology_prefixes) or stripped_code.startswith("# upgraded code here"):
                 error = "LLM returned placeholder text instead of upgraded code"
-                print(f"⚠️  {input_path} attempt {attempt} error: {error}")
-                continue
-
-            tf1_error = utils.detect_tf1_usage(new_code)
-            if tf1_error:
-                error = tf1_error
-                current_code = new_code
-                print(f"⚠️  {input_path} attempt {attempt} error: {error}")
+                print(f"  {input_path} attempt {attempt} error: {error}")
                 continue
 
             # Write the upgraded code
